@@ -1,20 +1,21 @@
+import sys
 from OpenGL.GL import *
 from OpenGL.GLUT import *
 from OpenGL.GLU import *
 import Image
-import sys
 import time
 import math
-from tracker import tracker
-import gmaptile
-import texture
-import geodesy
+from nav.tracker import tracker
+from mapcache import maptile
+from nav import texture
+from util import geodesy
 import ImageFont
 import ImageDraw
 from datetime import datetime
 from optparse import OptionParser
 import os
 import logging
+import config
 
 ESCAPE = '\x1b'
 
@@ -39,8 +40,8 @@ destpos = None
 
 scales = None
 
-units = 'metric'
-#units = 'imperial'
+#units = 'metric'
+units = 'imperial'
 
 def InitGL(Width, Height):
   LoadStaticTextures()
@@ -92,11 +93,11 @@ def LoadStaticTextures ():
   curstexid = glGenTextures(1)
   markertexids = [glGenTextures(1) for i in range(0, 3)]
 
-  image = Image.open('/home/drew/unav/cursor.png')
+  image = Image.open('%s/pixmap/cursor.png' % sys.path[0])
   LoadTexture(curstexid, image, True)
 
   for (id, i) in zip(markertexids, range(1, 4)):
-    image = Image.open('/home/drew/unav/target%d.png' % i)
+    image = Image.open('%s/pixmap/target%d.png' % (sys.path[0], i))
     LoadTexture(id, image, True)
 
   #text
@@ -140,11 +141,11 @@ def DrawGLScene():
   #will differ in browse mode
   pos_center = pos
 
-  xy = gmaptile.mercator_to_xy(gmaptile.ll_to_mercator(pos_center))
-  tile = gmaptile.xy_to_tile(xy, zoom)
-  tilef = gmaptile.xy_to_tilef(xy, zoom)
+  xy = maptile.mercator_to_xy(maptile.ll_to_mercator(pos_center))
+  tile = maptile.xy_to_tile(xy, zoom)
+  tilef = maptile.xy_to_tilef(xy, zoom)
 
-  pf = gmaptile.xy_to_tilef(gmaptile.mercator_to_xy(gmaptile.ll_to_mercator(pos)), zoom)
+  pf = maptile.xy_to_tilef(maptile.mercator_to_xy(maptile.ll_to_mercator(pos)), zoom)
 
   global curview
   if curview != (view, zoom, tile):
@@ -185,7 +186,7 @@ def DrawGLScene():
 
   #destination marker
   if destpos != None:
-    dp = gmaptile.xy_to_tilef(gmaptile.mercator_to_xy(gmaptile.ll_to_mercator(destpos)), zoom)
+    dp = maptile.xy_to_tilef(maptile.mercator_to_xy(maptile.ll_to_mercator(destpos)), zoom)
 
     rotspeed = [100, -10, 130]
 
@@ -224,7 +225,7 @@ def DrawGLScene():
     bear = geodesy.bearing(pos, destpos)
     vd = geodesy.rangef(0, dist, segment_length)
     vp = geodesy.plot_dv(pos, bear, vd)
-    pts = [gmaptile.xy_to_tilef(gmaptile.mercator_to_xy(gmaptile.ll_to_mercator(wpt)), zoom) for wpt in vp]
+    pts = [maptile.xy_to_tilef(maptile.mercator_to_xy(maptile.ll_to_mercator(wpt)), zoom) for wpt in vp]
     pts = [(pt[0] - tilef[0], pt[1] - tilef[1]) for pt in pts]
 
     filt = [(pt[0]**2. + pt[1]**2.)**.5 < 3 for pt in pts]
@@ -503,7 +504,7 @@ def load_waypoints ():
   global waypoints
   if waypoints == None:
     waypoints = {}
-    lines = [l.strip() for l in open('waypoints').readlines() if l.strip()]    
+    lines = [l.strip() for l in open('%s/data/waypoints' % sys.path[0]).readlines() if l.strip()]    
 
     for l in lines:
       k = l.find('#')
@@ -599,20 +600,25 @@ def parse_args (args):
 
   print zoom, view, destpos, ('demo', demo_p, demo_v) if demo else 'gps'
 
-logging.basicConfig(level=logging.INFO, stream=sys.stderr, format='')
 
-parse_args(sys.argv)
 
-print 'waiting for gps lock...'
-while gps.get_loc()[0] == None:
-  time.sleep(0.1)
-print 'lock acquired'
 
-print "Hit ESC key to quit."
-main()
-    	
-		
-#gps.terminate()
+
+
+
+if __name__ == "__main__":
+
+  logging.basicConfig(level=logging.INFO, stream=sys.stderr, format='')
+  parse_args(sys.argv)
+
+  print 'waiting for gps lock...'
+  while gps.get_loc()[0] == None:
+    time.sleep(0.1)
+  print 'lock acquired'
+
+  main() 	
+
+  #gps.terminate()
 
 
 

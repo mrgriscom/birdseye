@@ -4,7 +4,7 @@ import re
 from Polygon import *
 import psycopg2
 from datetime import datetime
-import gmapdownloader
+from mapcache import mapdownloader
 import config
 
 def error_out (msg):
@@ -180,7 +180,7 @@ if __name__ == "__main__":
   db_validate(args)
 
   (layername, layerinfo) = args['layers'].items()[0]
-  gmapdownloader.download(args['region'], layername, layerinfo['zoom'], layerinfo['refr'])
+  mapdownloader.download(args['region'], layername, layerinfo['zoom'], layerinfo['refr'])
 
 
 

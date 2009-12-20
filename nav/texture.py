@@ -1,8 +1,7 @@
 from Image import *
-import gmapdownloader
 import os
 import ImageEnhance
-import gmapdownloader
+from mapcache import mapdownloader
 import config
 
 blocksize = 256
@@ -64,7 +63,7 @@ conn = None
 def tile_file (mode, zoom, x, y):
   global conn
   if conn == None:
-    conn = gmapdownloader.dbconn()
+    conn = mapdownloader.dbconn()
 
   curs = conn.cursor()
   vals = dict(z=zoom, x=x, y=y, type=1 if mode == 'map' else 2)

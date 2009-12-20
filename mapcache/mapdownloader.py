@@ -10,7 +10,7 @@ import hashlib
 import curses
 import psycopg2
 from Polygon import *
-import gmaptile
+import maptile
 from downloadmanager import DownloadManager
 import config
 
@@ -209,7 +209,7 @@ class tile_enumerator (threading.Thread):
   def __init__  (self, region, depth):
     threading.Thread.__init__(self)
 
-    self.tess = gmaptile.region_tessellation(region, depth)
+    self.tess = maptile.region_tessellation(region, depth)
     self.est_num_tiles = self.tess.size_estimate()
     self.tiles = set()
     self.count = 0
@@ -323,7 +323,7 @@ def download (region, overlay, max_depth, refresh_mode):
   curses.wrapper(download_curses, region, overlay, max_depth, refresh_mode)
 
 def download_curses (w, region, overlay, max_depth, refresh_mode):
-  polygon = Polygon([gmaptile.mercator_to_xy(gmaptile.ll_to_mercator(p)) for p in region.contour(0)])
+  polygon = Polygon([maptile.mercator_to_xy(maptile.ll_to_mercator(p)) for p in region.contour(0)])
  
   te = tile_enumerator(polygon, max_depth)
   monitor(w, 0, te, 'Enumerating', 15, 3)

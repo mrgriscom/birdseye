@@ -1,8 +1,8 @@
 import threading
 import os
 import time
-import geodesy
-import gpslistener
+from util import geodesy
+from gps import gpslistener
 import sys
 
 class tracker(threading.Thread):
