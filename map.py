@@ -14,6 +14,7 @@ import ImageDraw
 from datetime import datetime
 from optparse import OptionParser
 import os
+import logging
 
 ESCAPE = '\x1b'
 
@@ -37,6 +38,9 @@ gps = None
 destpos = None
 
 scales = None
+
+units = 'metric'
+#units = 'imperial'
 
 def InitGL(Width, Height):
   LoadStaticTextures()
@@ -106,7 +110,7 @@ def LoadStaticTextures ():
   xc = 0
   timg = Image.new('RGBA', (1024, 1024))
   draw = ImageDraw.Draw(timg)
-  for text in u'0123456789.:+-hmJanFebMrApyulgSOctNovDTWdifE \xb0?':
+  for text in u'0123456789.:+-hmJanFebMrApyulgSOctNovDTWdifEk \xb0?':
     sz = font.getsize(text)
     draw.text((xc, 0), text, font=font)
     glyphtable[text] = (xc, sz[0], sz[1])
@@ -130,6 +134,7 @@ def LoadMapTexture (view, zoom, tile):
   glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_DECAL)
 
 def DrawGLScene():
+ try:
   (pos, v, age) = gps.get_loc()
 
   #will differ in browse mode
@@ -310,7 +315,9 @@ def DrawGLScene():
   #distance
   if destpos != None:
 
-    diststr = '%.3f' % (dist / 1609.344)
+    unit = 1000. if units == 'metric' else 1609.344
+
+    diststr = '%.3f' % (dist / unit)
 
     glBindTexture(GL_TEXTURE_2D, texttexid)
 
@@ -325,10 +332,17 @@ def DrawGLScene():
   global scales
   if scales == None:
     scales = []
-    for i in [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000]:
-      scales.append((i*.3048, '%d ft' % i))
-    for i in [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000]:
-      scales.append((i*1609.344, '%d mi' % i))
+
+    if units != 'metric':
+      for i in [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000]:
+        scales.append((i*.3048, '%d ft' % i))
+      for i in [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000]:
+        scales.append((i*1609.344, '%d mi' % i))
+    else:
+      for i in [1, 2, 5, 10, 20, 50, 100, 200, 500]:
+        scales.append((i, '%d m' % i))
+      for i in [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000]:
+        scales.append((i*1000., '%d km' % i))
 
   meters_per_pixel = 2*math.pi*geodesy.EARTH_MEAN_RAD*math.cos(math.radians(pos_center[0]))/(256*2.**zoom)
   optimum_bar_length = 100
@@ -390,8 +404,12 @@ def DrawGLScene():
 
   glutSwapBuffers()
 
+ except:
+  logging.exception('unhandled exception in gl render thread')
+  sys.exit()
+
 def textLen (str):
-  return sum([glyphtable[c][1] for c in str])
+  return sum([glyphtable[c if c in glyphtable else '?'][1] for c in str])
 
 def writeText (str):
   xc = 0
@@ -580,6 +598,8 @@ def parse_args (args):
   gps.start()
 
   print zoom, view, destpos, ('demo', demo_p, demo_v) if demo else 'gps'
+
+logging.basicConfig(level=logging.INFO, stream=sys.stderr, format='%(asctime)s %(message)s')
 
 parse_args(sys.argv)
 
