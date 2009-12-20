@@ -13,6 +13,7 @@ import ImageFont
 import ImageDraw
 from datetime import datetime
 from optparse import OptionParser
+import os
 
 ESCAPE = '\x1b'
 
@@ -133,7 +134,6 @@ def DrawGLScene():
 
   #will differ in browse mode
   pos_center = pos
-  #pos_center = (pos_center[0] + 55 * math.cos(clock()/40.) - 55, pos_center[1] + 55 * math.sin(clock()/40.))
 
   xy = gmaptile.mercator_to_xy(gmaptile.ll_to_mercator(pos_center))
   tile = gmaptile.xy_to_tile(xy, zoom)
@@ -149,6 +149,10 @@ def DrawGLScene():
   glClear(GL_COLOR_BUFFER_BIT)
   glMatrixMode(GL_MODELVIEW)
   glLoadIdentity()					# Reset The View 
+
+  glPushMatrix()
+#  glTranslatef(-1.333, 0, 0)
+#  glRotatef(90 - v[1], 0, 0, 1)
 
   glPushMatrix()
   glTranslatef(-texwidth/2, -texheight/2, 0.)
@@ -238,20 +242,6 @@ def DrawGLScene():
 
     glEnable(GL_TEXTURE_2D)
 
-    #distance
-    diststr = '%.3f' % (dist / 1609.344)
-
-    glBindTexture(GL_TEXTURE_2D, texttexid)
-
-    glPushMatrix()
-    glTranslatef(-1.99, -1.17, 0)
-
-    writeText(diststr)
-
-    glPopMatrix()
-
-
-
   #position marker
   glPushMatrix()
   glTranslatef(pf[0] - tilef[0], pf[1] - tilef[1], 0)
@@ -273,6 +263,8 @@ def DrawGLScene():
   glTexCoord2f(0.0, 0.0) 
   glVertex3f(0.125, 0.125, 0.0)
   glEnd()
+
+  glPopMatrix()
 
   glPopMatrix()
 
@@ -314,6 +306,20 @@ def DrawGLScene():
   writeText(timestr)
 
   glPopMatrix()
+
+  #distance
+  if destpos != None:
+
+    diststr = '%.3f' % (dist / 1609.344)
+
+    glBindTexture(GL_TEXTURE_2D, texttexid)
+
+    glPushMatrix()
+    glTranslatef(-1.99, -1.17, 0)
+
+    writeText(diststr)
+
+    glPopMatrix()
 
   #scale bar
   global scales
@@ -451,13 +457,16 @@ def keyPressed(*args):
 
 def main():
   global window
+  windowname = 'map'
 
   glutInit([''])
   glutInitDisplayMode(GLUT_RGBA | GLUT_DOUBLE)
   glutInitWindowSize(1024, 600)
   glutInitWindowPosition(0, 0)
-  window = glutCreateWindow("map")
+  window = glutCreateWindow(windowname)
+
   glutFullScreen()
+  os.popen('wmctrl -r %s -b toggle,fullscreen' % windowname)
 
   glutDisplayFunc(DrawGLScene)
   glutIdleFunc(DrawGLScene)
