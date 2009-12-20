@@ -405,7 +405,7 @@ def DrawGLScene():
   glutSwapBuffers()
 
  except:
-  logging.exception('unhandled exception in gl render thread')
+  logging.exception('')
   sys.exit()
 
 def textLen (str):
@@ -599,7 +599,7 @@ def parse_args (args):
 
   print zoom, view, destpos, ('demo', demo_p, demo_v) if demo else 'gps'
 
-logging.basicConfig(level=logging.INFO, stream=sys.stderr, format='%(asctime)s %(message)s')
+logging.basicConfig(level=logging.INFO, stream=sys.stderr, format='')
 
 parse_args(sys.argv)
 
