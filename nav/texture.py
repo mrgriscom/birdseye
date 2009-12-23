@@ -3,6 +3,7 @@ import os
 import ImageEnhance
 from mapcache import mapdownloader
 import config
+import sys
 
 blocksize = 256
 fallback = 2
@@ -22,7 +23,7 @@ def get_img_chunk (mode, zoom, x, y):
   if tile == None:
     tile = get_fallback_tile(mode, zoom, x, y)
   if tile == None:
-    missing = '/home/drew/nav/missing.jpg'
+    missing = '%s/pixmap/missing.jpg' % sys.path[0]
     tile = open(missing)
   return tile
 
