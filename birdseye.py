@@ -329,6 +329,33 @@ def DrawGLScene():
 
     glPopMatrix()
 
+
+    #eta
+    glPushMatrix()
+    glTranslatef(-1.99, -1.06, 0)
+    glScalef(.7, .7, 1)
+
+    if v != None and v[0] != None and v[1] != None:
+      deviation = v[1] - bear
+      vmg = v[0] * math.cos(math.radians(deviation))
+      eta = int(dist / vmg)
+
+      if eta > 100 * 3600.:
+        etastr = '-----'
+      else:
+        (etah, etam, etas) = (eta / 3600, (eta / 60) % 60, eta % 60)
+        etastr = '%d %d %d' % (etah, etam, etas)
+    else:
+      etastr = '-----'
+
+
+
+    writeText(etastr)
+
+    glPopMatrix()
+
+
+
   #scale bar
   global scales
   if scales == None:
