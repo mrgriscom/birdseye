@@ -192,7 +192,7 @@ class gps_dispatcher (threading.Thread):
     self.up = True
 
     self.sample_window = 0.1 #s, how far apart the GPS timestamps can be before being considered separate samples
-    self.buffer_window = 0.2 #s, how long we wait for all messages to come in before dispatching the sample
+    self.buffer_window = 0.3 #s, how long we wait for all messages to come in before dispatching the sample
 
     self.server = server
     self.queue = Queue.Queue(-1)
