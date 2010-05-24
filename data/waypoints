@@ -1,3 +1,14 @@
+mansa: -11.13 28.85
+
+phalaborwa: -23.94573 31.16540
+letaba: -23.852963 31.57495
+covane: -24.42525 32.84505
+ltfp: -23.86818 32.14736
+giriyondo: -23.58383 31.6603
+campismo: -23.85717 32.00714
+pomene: 0.0 0.0
+covanemaybe: -23.92169 32.16092
+
 #residences
 home: 0.0 0.0
 mom: 0.0 0.0
@@ -6,6 +17,7 @@ dad-ma: 0.0 0.0
 pa-kew: 0.0 0.0
 cottage: 0.0 0.0
 catskabin: 0.0 0.0
+griscom: 0.0 0.0
 
 #airports
 bos: 42.363 -71.009
@@ -30,12 +42,15 @@ climb: 42.2958 -71.7981
 #dar
 kunduchi: -6.6667 39.2194
 dtree: 0.0 0.0
+dtree-old: 0.0 0.0
 ubungo: -6.791 39.211
 
 
 dodoma: -6.182 35.752
 vicfalls: -17.923 25.855
-
+jules: -15.3829 28.3196
+ndola: -12.968 28.632
+castle: -12.9534 28.6491
 
 #canada roadtrip
 globe: 43.808 -70.164

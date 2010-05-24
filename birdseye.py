@@ -40,8 +40,8 @@ destpos = None
 
 scales = None
 
-#units = 'metric'
-units = 'imperial'
+units = 'metric'
+#units = 'imperial'
 
 def InitGL(Width, Height):
   LoadStaticTextures()
@@ -336,8 +336,9 @@ def DrawGLScene():
     glScalef(.7, .7, 1)
 
     if v != None and v[0] != None and v[1] != None:
+      velo = v[0] if v[0] > 0 else 0.001
       deviation = v[1] - bear
-      vmg = v[0] * math.cos(math.radians(deviation))
+      vmg = velo * math.cos(math.radians(deviation))
       eta = int(dist / vmg)
 
       if eta > 100 * 3600.:
