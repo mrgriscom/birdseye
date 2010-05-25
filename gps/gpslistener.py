@@ -6,6 +6,7 @@ import pickle
 import struct
 from datetime import datetime
 import sys
+import logging
 
 # this module listens directly to the gpsd output, aggregates
 # and pre-processes the data, and dispatches it over a socket
@@ -14,9 +15,6 @@ import sys
 # it is intended to simplify the interface to gpsd, hiding
 # some of its quirks/inaccuracies, especially for a particular
 # device (BU-353)
-
-# todo:
-#   use proper logging framework
 
 GPSD_PORT = 2947
 DISPATCH_PORT = 2948
@@ -132,8 +130,7 @@ class gps_listener (threading.Thread):
     try:
       self.listen_gps()
     except:
-      #log me
-      pass
+      logging.exception('gpslistener')
 
   def listen_gps (self):
     self.socket.send('W=1')
@@ -166,12 +163,12 @@ class gps_listener (threading.Thread):
         if len(pieces) >= 15:
           data = self.parse_nav_msg(pieces)
         else:
-          log('message lacked expected data fields')
+          logging.warn('message lacked expected data fields')
       else:
         if pieces[0] == '?':
-          log('no fix data')
+          logging.debug('no fix data')
         else:
-          log('ignored message type [%s]' % pieces[0])
+          logging.info('ignored message type [%s]' % pieces[0])
           if pieces[0].startswith('MID'):
             self.sirf_alert = True
     elif message.startswith(sat_preamble):
@@ -179,9 +176,9 @@ class gps_listener (threading.Thread):
       if pieces[0] in ['GSV']:
         data = self.parse_sat_data(' '.join(pieces[2:]))
       else:
-        log('ignored message type [%s]' % pieces[0])
+        logging.info('ignored message type [%s]' % pieces[0])
     else:
-      log('non-relevant message received')
+      logging.info('non-relevant message received')
 
     return data
 
@@ -203,7 +200,7 @@ class gps_listener (threading.Thread):
 
     if data['time'] == None or data['time'] > time.time() + 1.0e7:
       #happens sometimes on the first sample after gpsd starts up
-      log('bad timestamp; ignoring report')
+      logging.info('bad timestamp; ignoring report')
       return None
     
     return ('nav', data)
@@ -256,8 +253,7 @@ class gps_dispatcher (threading.Thread):
       while self.up:
         self.process_queue()
     except:
-      #log me
-      pass
+      logging.exception('gpsdispatcher')
 
   def process_queue (self):
     if (self.report_timeout == None):
@@ -272,7 +268,7 @@ class gps_dispatcher (threading.Thread):
       self.handle_data(data)
     except Queue.Empty:
       if reportable_timeout:
-        log('timed out waiting for data')
+        logging.warn('timed out waiting for data')
         self.dispatch_report()
 
   def handle_data (self, data):
@@ -289,7 +285,7 @@ class gps_dispatcher (threading.Thread):
       self.start_new_report(data)
       self.handle_data(data)
     else:
-      log('additional data received for sample already complete! type: %s, time: %f, current: %f' %
+      logging.warn('additional data received for sample already complete! type: %s, time: %f, current: %f' %
               (data['msg_type'], data['time'], self.active_report))
 
   def start_new_report (self, data):
@@ -325,7 +321,7 @@ class gps_dispatcher (threading.Thread):
           if self.report_data[key] == None:
             self.report_data[key] = value
           elif self.report_data[key] != value:
-            log('conflicting values among messages for same sample! [' + self.report_data[key] + ', ' + value + ']')
+            logging.warn('conflicting values among messages for same sample! [' + self.report_data[key] + ', ' + value + ']')
     
   def is_report_complete (self):
     if set(self.report_data['msg_types']) == set(['GGA', 'GSA', 'RMC']):
@@ -356,12 +352,12 @@ class gps_dispatcher (threading.Thread):
       report['climb'] = None
       addcomment(report, 'ign-zero-climb')
     else:
-      log('BU-353: detected report with non-zero climb!')
+      logging.info('BU-353: detected report with non-zero climb!')
 
     if float_eq(report['v_error'], 8.0):
       report['v_error'] = None
       addcomment(report, 'ign-perfect-vdop')
-      log('BU-353: removing untrustworthy v-error')
+      logging.info('BU-353: removing untrustworthy v-error')
 
     #further cleanup of error estimates?
 
@@ -369,25 +365,25 @@ class gps_dispatcher (threading.Thread):
     if report['fix_type'] == '2d' and report['alt'] != None:
       report['alt'] = None
       addcomment(report, 'drop-alt-2d')
-      log('removing altitude on 2-d fix')
+      logging.debug('removing altitude on 2-d fix')
 
     if report['alt'] == None:
       if report['climb'] != None:
         report['climb'] = None
         addcomment(report, 'drop-climb-noalt')
-        log('removing climb w/o altitude')
+        logging.debug('removing climb w/o altitude')
 
       if report['v_error'] != None:
         report['v_error'] = None
         addcomment(report, 'drop-vdop-noalt')
-        log('removing err_v w/o altitude')
+        logging.debug('removing err_v w/o altitude')
 
   def dispatch (self, report):
     if self.report_sufficient(report):
       self.server.broadcast(report)
       self.last_fix_at = time.time()
     else:
-      log('report does not contain minimally-required data')   
+      logging.warn('report does not contain minimally-required data')   
 
   def report_sufficient (self, report):
     for key in ['time', 'lat', 'lon']:
@@ -428,8 +424,7 @@ class gps_server (threading.Thread):
 
       self.close()
     except:
-      #log me
-      pass
+      logging.exception('gpsserver')
 
   def addclient (self, socket):
     lsocket = linesocket(socket)
@@ -437,7 +432,7 @@ class gps_server (threading.Thread):
 
     self.listlock.acquire()
     self.clientlist.append(lsocket)
-    log('subscriber added. %d total' % len(self.clientlist))
+    logging.info('subscriber added. %d total' % len(self.clientlist))
     self.listlock.release()
 
   def broadcast (self, data):
@@ -457,7 +452,7 @@ class gps_server (threading.Thread):
       dead.close()
 
     if len(deadconnections) > 0:
-      log('%d subscriber(s) lost. %d remaining' % (len(deadconnections), len(self.clientlist)))
+      logging.info('%d subscriber(s) lost. %d remaining' % (len(deadconnections), len(self.clientlist)))
     self.listlock.release()
 
   def close (self):
@@ -485,10 +480,6 @@ def addcomment (report, comment):
     report['comment'] = comment
   else:
     report['comment'] += ';' + comment
-
-def log (message):
-  #print str(datetime.utcnow()) + ':: ' + message
-  pass
 
 #subscriber access
 class gps_subscription ():
@@ -527,7 +518,7 @@ if __name__ == '__main__':
   try:
     server = gps_server()
   except socket.error:
-    log('cannot bind to dispatcher port %s' % DISPATCH_PORT)
+    logging.error('cannot bind to dispatcher port %s' % DISPATCH_PORT)
     sys.exit()
 
   dispatcher = gps_dispatcher(server)
@@ -535,7 +526,7 @@ if __name__ == '__main__':
   try:
     listener = gps_listener(dispatcher.queue)
   except linesocket.CantConnect:
-    log('cannot connect to gpsd service')
+    logging.error('cannot connect to gpsd service')
     sys.exit()
 
   threads = [server, listener, dispatcher]
@@ -547,16 +538,16 @@ if __name__ == '__main__':
     while running:
       time.sleep(1)
       if not all_alive(threads):
-        log('thread encountered fatal error')
+        logging.error('thread encountered fatal error')
         running = False
   except KeyboardInterrupt:
-    log('shutdown request from user')
+    logging.info('shutdown request from user')
 
-  log('shutting down...')
+  logging.info('shutting down...')
   for t in reversed(threads):
     t.terminate()
   
   while not all_dead(threads):
     time.sleep(1)
-  log('shut down complete')
+  logging.info('shut down complete')
   sys.exit()

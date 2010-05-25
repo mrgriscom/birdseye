@@ -10,10 +10,21 @@ import re
 from gps import gpslistener
 import socket
 import math
+import logging
+import logging.handlers
 
 DEVICE = '/dev/ttyUSB0'
 BAUD = 57600
 POLL_INTERVAL = 1.
+
+def init_logging ():
+  LOG_FILE = 'birdseye.log'
+  root = logging.getLogger()
+  root.setLevel(logging.DEBUG)
+  handler = logging.handlers.RotatingFileHandler(LOG_FILE, maxBytes=2**20, backupCount=3)
+  handler.setFormatter(logging.Formatter('%(asctime)s:%(levelname)s:%(message)s'))
+  root.addHandler(handler)
+init_logging()
 
 class monitor_thread (threading.Thread):
   def __init__ (self, poll_interval=None):
@@ -83,6 +94,7 @@ class gpsd_process (threading.Thread):
     while True:
       line = self.p.stderr.readline()
       if line:
+        logging.debug(line.strip())
         self.queue.put(line.strip())
       else:
         break
@@ -90,6 +102,7 @@ class gpsd_process (threading.Thread):
   def terminate (self):
     os.kill(self.p.pid, signal.SIGTERM)
 
+  #this isn't a good idea; it tends to crash gpsd and/or make it behave strangely
   def flash (self):
     self.set_rate()
     os.kill(self.p.pid, signal.SIGHUP)
@@ -159,18 +172,28 @@ class gpsd (monitor_thread):
       self.gpsd = gpsd_process(self.device)
       self.gpsd.start()
     else:
-      print 'gpsd already running'
+      logging.warn('gpsd already running')
 
   def stop_gpsd (self):
     if self.gpsd != None and self.gpsd.isAlive():
       self.gpsd.terminate()
+
+      #wait for process to terminate
+      for i in range(0, 100):
+        if not self.gpsd.isAlive():
+          break
+        time.sleep(0.1)
+
+      if self.gpsd.isAlive():
+        logging.error('gpsd didn\'t terminate after lengthy wait!')
     else:
-      print 'gpsd not running'
+      logging.warn('gpsd not running')
 
   def restart_gpsd (self):
     self.stop_gpsd()
     self.start_gpsd()
 
+  #this isn't a good idea; it tends to crash gpsd and/or make it behave strangely
   def flash_gpsd (self):
     self.gpsd.flash()
 
@@ -303,6 +326,7 @@ def loader ():
 
 def loader_curses (w):
   curses.curs_set(0)
+  w.nodelay(1)
 
   dw = device_watcher('/dev/ttyUSB0')
   dw.start()
@@ -315,21 +339,42 @@ def loader_curses (w):
   gpsliw.start()
   gpsliw.load()
 
-  try:
-    while True:
+  up = True
+  while up:
+    try:
       println(w, fmt_line('GPS Device', dw.status()), 1, 2)
       println(w, fmt_line('GPS Daemon', gpsdw.status()), 2, 2)
       println(w, fmt_line('GPS Listener', gpsliw.status()), 3, 2)
 
-      println(w, w.getkey(), 5, 2)
+      println(w, 'ESC:   quit', 8, 2)
+      println(w, 'F2:    reboot gpsd', 9, 2)
+
+      try:
+        key = w.getkey()
+      except:
+        key = ''
+
+      if key in ('\x1b', '^['):
+        up = False
+      elif key == 'KEY_F(2)':
+        restart(gpsdw)
+#      elif key == 'KEY_F(3)':
+#        flash(gpsdw, gpsliw)
 
       time.sleep(0.01)
-  except KeyboardInterrupt:
-    pass
+    except KeyboardInterrupt:
+      up = False
 
   dw.terminate()
   gpsdw.terminate()
   gpsliw.terminate()
+
+def restart (gpsdw):
+  gpsdw.restart_gpsd()
+
+#def flash (gpsdw, gpsliw):
+#  gpsdw.flash_gpsd()
+#  #trigger listener to reconnect
 
 def fmt_line (header, status):
   HEADER_WIDTH = 20
