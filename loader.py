@@ -296,7 +296,7 @@ class gpsgen (monitor_thread):
         return 'no data yet from gpsd'
       elif since_fix != None and since_fix < 5.:
         return 'lookin\' good!'
-      elif since_ping > 20.:
+      elif since_ping > 10.:
         return 'no data from gpsd in %d' % int(since_ping)
       else:
         msg = ('no fix in %d' % int(since_fix)) if since_fix != None else 'no fix yet'
