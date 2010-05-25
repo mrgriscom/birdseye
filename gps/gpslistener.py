@@ -7,11 +7,13 @@ import struct
 from datetime import datetime
 import sys
 
-# this module listens directly to the gpsd output, aggregates and pre-processes
-# the data, and dispatches it over a socket to other consumers
+# this module listens directly to the gpsd output, aggregates
+# and pre-processes the data, and dispatches it over a socket
+# to other consumers
 
-# it is intended to simplify the interface to gpsd, hiding some of its
-# quirks/inaccuracies, especially for a particular device (BU-353)
+# it is intended to simplify the interface to gpsd, hiding
+# some of its quirks/inaccuracies, especially for a particular
+# device (BU-353)
 
 # todo:
 #   use proper logging framework
@@ -19,11 +21,13 @@ import sys
 GPSD_PORT = 2947
 DISPATCH_PORT = 2948
 
-#a socket wrapper that provides for sending/receiving entire messages, instead of
-#operating on low-level buffers. has support for timeouts, but main use case is
-#timing-out when no data has been sent/received. timeout mid-message on receive is
-#supported because it's easy, but timeout mid-message on send is a fatal error. thus,
-#this class is best used only for local socket communication
+#a socket wrapper that provides for sending/receiving entire
+#messages, instead of operating on low-level buffers. has
+#support for timeouts, but main use case is timing-out when no
+#data has been sent/received. timeout mid-message on receive is
+#supported because it's easy, but timeout mid-message on send
+#is a fatal error. thus, this class is best used only for local
+#socket communication
 class linesocket:
   class BrokenConnection (Exception):
     pass
@@ -101,12 +105,16 @@ class linesocket:
   def close (self):
     self.socket.close()
 
-#listener thread that connects to gpsd server, reads sentences, parses them in a basic manner
-#and adds them to a message queue
+#listener thread that connects to gpsd server, reads sentences,
+#parses them in a basic manner and adds them to a message queue
 class gps_listener (threading.Thread):
   def __init__  (self, q):
     threading.Thread.__init__(self)
     self.up = True
+
+    self.last_data_at = None
+    self.sat_info = None
+    self.sirf_alert = False
 
     self.queue = q
     self.socket = linesocket()
@@ -121,7 +129,11 @@ class gps_listener (threading.Thread):
     self.up = False
 
   def run (self):
-    self.listen_gps()
+    try:
+      self.listen_gps()
+    except:
+      #log me
+      pass
 
   def listen_gps (self):
     self.socket.send('W=1')
@@ -129,23 +141,30 @@ class gps_listener (threading.Thread):
     while self.up:
       try:
         line = self.socket.readline()
+        self.last_data_at = time.time()
+
         data = self.parse_message(line)
         if data != None:
-          self.queue.put(data)
+          (type, val) = data
+          if type == 'nav':
+            self.queue.put(val)
+          elif type == 'sat':
+            self.sat_info = val
       except socket.timeout:
         pass
 
     self.socket.close()
  
   def parse_message (self, message):
-    preamble = 'GPSD,O='
+    nav_preamble = 'GPSD,O='
+    sat_preamble = 'GPSD,Y='
     data = None
 
-    if message.startswith(preamble):
-      pieces = message[len(preamble):].split()
+    if message.startswith(nav_preamble):
+      pieces = message[len(nav_preamble):].split()
       if pieces[0] in ['GGA', 'GSA', 'RMC']:
         if len(pieces) >= 15:
-          data = self.parse_data(pieces)
+          data = self.parse_nav_msg(pieces)
         else:
           log('message lacked expected data fields')
       else:
@@ -153,12 +172,20 @@ class gps_listener (threading.Thread):
           log('no fix data')
         else:
           log('ignored message type [%s]' % pieces[0])
+          if pieces[0].startswith('MID'):
+            self.sirf_alert = True
+    elif message.startswith(sat_preamble):
+      pieces = message[len(sat_preamble):].split()
+      if pieces[0] in ['GSV']:
+        data = self.parse_sat_data(' '.join(pieces[2:]))
+      else:
+        log('ignored message type [%s]' % pieces[0])
     else:
-      log('non-navigation message received')
+      log('non-relevant message received')
 
     return data
 
-  def parse_data (self, pieces):
+  def parse_nav_msg (self, pieces):
     fix_types = {'?': None, '1': 'invalid', '2': '2d', '3': '3d'}
 
     data = {}
@@ -179,7 +206,25 @@ class gps_listener (threading.Thread):
       log('bad timestamp; ignoring report')
       return None
     
-    return data
+    return ('nav', data)
+
+  def parse_sat_data (self, satinfo):
+    try:
+      pieces = satinfo.split(':')
+      sats = {}
+      for pc in pieces[1:]:
+        if not pc:
+          continue
+
+        (id, alt, azi, snr, used) = [int(x) for x in pc.split()]
+        sats[id] = {'alt': alt, 'azimuth': azi, 'snr': snr, 'used': (used == 1)}
+
+      return ('sat', sats)
+    except:
+      return None
+
+
+
 
 #aggregator/dispatcher thread that reads gpsd messages from a queue. it aggregates the data from
 #multiple messages together to create a complete fix and then dispatches the fix when ready. if
@@ -201,12 +246,18 @@ class gps_dispatcher (threading.Thread):
     self.report_complete = False #whether the current sample has all necessary data and has been dispatched
     self.report_timeout = None   #timestamp of when to stop collecting data for current sample and dispatch it
 
+    self.last_fix_at = None
+
   def terminate (self):
     self.up = False
 
   def run (self):
-    while self.up:
-      self.process_queue()
+    try:
+      while self.up:
+        self.process_queue()
+    except:
+      #log me
+      pass
 
   def process_queue (self):
     if (self.report_timeout == None):
@@ -249,15 +300,15 @@ class gps_dispatcher (threading.Thread):
 
   def aggregate_data (self, data):
     #basic sanity checking for BU-353
-    expected_contents = {'GGA': ['time', 'lat', 'lon', 'alt', 'climb'],
-                         'GSA': ['time', 'lat', 'lon', 'alt', 'h_error', 'v_error', 'climb', 'fix_type'],
-                         'RMC': ['time', 'lat', 'lon', 'speed', 'heading']}
-    expected_fields = expected_contents[data['msg_type']]
-    for (key, value) in data.iteritems():
-      if key != 'msg_type':
-        if (value != None) != (key in expected_fields):
-          log('BU-353: did not receive expected message contents; type: %s, field: %s, value: %s' %
-                 (data['msg_type'], key, str(value)))
+    #expected_contents = {'GGA': ['time', 'lat', 'lon', 'alt', 'climb'],
+    #                     'GSA': ['time', 'lat', 'lon', 'alt', 'h_error', 'v_error', 'climb', 'fix_type'],
+    #                     'RMC': ['time', 'lat', 'lon', 'speed', 'heading', 'h_error', 'v_error', 'climb', 'fix_type']}
+    #expected_fields = expected_contents[data['msg_type']]
+    #for (key, value) in data.iteritems():
+    #  if key != 'msg_type':
+    #    if (value != None) != (key in expected_fields):
+    #      log('BU-353: did not receive expected message contents; type: %s, field: %s, value: %s' %
+    #             (data['msg_type'], key, str(value)))
 
     #real work
     if self.report_data == None:
@@ -334,6 +385,7 @@ class gps_dispatcher (threading.Thread):
   def dispatch (self, report):
     if self.report_sufficient(report):
       self.server.broadcast(report)
+      self.last_fix_at = time.time()
     else:
       log('report does not contain minimally-required data')   
 
@@ -366,14 +418,18 @@ class gps_server (threading.Thread):
     self.up = False
 
   def run (self):
-    while self.up:
-      try:
-        (clientsocket, address) = self.serversocket.accept()
-        self.addclient(clientsocket)
-      except socket.timeout:
-        pass
+    try:
+      while self.up:
+        try:
+          (clientsocket, address) = self.serversocket.accept()
+          self.addclient(clientsocket)
+        except socket.timeout:
+          pass
 
-    self.close()
+      self.close()
+    except:
+      #log me
+      pass
 
   def addclient (self, socket):
     lsocket = linesocket(socket)
@@ -431,7 +487,8 @@ def addcomment (report, comment):
     report['comment'] += ';' + comment
 
 def log (message):
-  print str(datetime.utcnow()) + ':: ' + message
+  #print str(datetime.utcnow()) + ':: ' + message
+  pass
 
 #subscriber access
 class gps_subscription ():

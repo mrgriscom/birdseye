@@ -7,6 +7,9 @@ import subprocess
 import signal
 import Queue
 import re
+from gps import gpslistener
+import socket
+import math
 
 DEVICE = '/dev/ttyUSB0'
 BAUD = 57600
@@ -174,6 +177,125 @@ class gpsd (monitor_thread):
   def cleanup (self):
     self.stop_gpsd()
 
+class gpsgen_loader (threading.Thread):
+  SERVER_RETRY_WAIT = 5.
+  LISTENER_RETRY_WAIT = 5.
+
+  def __init__(self):
+    threading.Thread.__init__(self)
+    
+    self.up = True
+
+    self.server = None
+    self.server_retry_at = None
+    self.dispatcher = None
+    self.listener = None
+    self.listener_retry_at = None
+    self.listener_term = False
+
+  def run (self):
+    while not self.server and self.up:
+      try:
+        self.server_retry_at = None
+        self.server = gpslistener.gps_server()
+        self.server.start()
+      except socket.error:
+        self.server_retry_at = time.time() + self.SERVER_RETRY_WAIT
+        self.interruptable_wait(self.SERVER_RETRY_WAIT)
+
+    if self.server:
+      self.dispatcher = gpslistener.gps_dispatcher(self.server)
+      self.dispatcher.start()
+
+    time.sleep(0.5)
+    while self.up:
+      while not self.listener and self.up:
+        try:
+          self.listener_retry_at = None
+          self.listener = gpslistener.gps_listener(self.dispatcher.queue)
+          self.listener.start()
+        except gpslistener.linesocket.CantConnect, e:
+          self.listener_retry_at = time.time() + self.LISTENER_RETRY_WAIT
+          self.interruptable_wait(self.LISTENER_RETRY_WAIT)
+
+      while self.up:
+        if not self.listener.isAlive():
+          self.listener = None
+          self.listener_term = True
+          self.listener_retry_at = time.time() + self.LISTENER_RETRY_WAIT
+          self.interruptable_wait(self.LISTENER_RETRY_WAIT)
+          self.listener_term = False
+          break
+
+    for t in [self.listener, self.dispatcher, self.server]:
+      if t != None and t.isAlive():
+        t.terminate()
+
+  def interruptable_wait (self, n, inc=.3):
+    k = 0.
+    while self.up and k < n - 1.0e-9:
+      time.sleep(min(inc, n - k))
+      k += inc
+
+  def terminate (self):
+    self.up = False
+
+class gpsgen (monitor_thread):
+  def __init__(self, poll_interval=.3):
+    monitor_thread.__init__(self, poll_interval)
+    self.loader = None
+
+  def get_status (self, stat):
+    return 6
+
+  def get_status_info (self, _):
+    l = self.loader
+    if l == None:
+      return 'listener not up'
+    elif l.server == None:
+      if l.server_retry_at == None:
+        return 'loading dispatcher...'
+      else:
+        return 'dispatcher: can\'t bind port; retry in %d' % int(math.ceil(l.server_retry_at - time.time()))
+    elif l.listener == None:
+      if l.listener_retry_at == None:
+        return 'loading listener...'
+      else:
+        return '%s; retry in %d' % ('gpsd terminated' if l.listener_term else 'can\'t connect to gpsd', int(math.ceil(l.listener_retry_at - time.time())))
+    else:
+      since_fix = time.time() - l.dispatcher.last_fix_at if l.dispatcher.last_fix_at else None
+      since_ping = time.time() - l.listener.last_data_at if l.listener.last_data_at else None
+
+      if l.listener.sirf_alert:
+        return 'gps is in SiRF mode!'
+      elif since_ping == None:
+        return 'no data yet from gpsd'
+      elif since_fix != None and since_fix < 5.:
+        return 'lookin\' good!'
+      elif since_ping > 20.:
+        return 'no data from gpsd in %d' % int(since_ping)
+      else:
+        msg = ('no fix in %d' % int(since_fix)) if since_fix != None else 'no fix yet'
+        msg += '; '
+        if l.listener.sat_info != None:
+          ttl = len(l.listener.sat_info)
+          nvg = len([s for s in l.listener.sat_info.values() if s['snr'] >= 40.])
+          ng = len([s for s in l.listener.sat_info.values() if s['snr'] >= 30. and s['snr'] < 40.])
+          nb = len([s for s in l.listener.sat_info.values() if s['snr'] >= 20. and s['snr'] < 30.])
+          nvb = len([s for s in l.listener.sat_info.values() if s['snr'] > 0. and s['snr'] < 20.])
+          msg += '%d sats %dvg/%dg/%db/%dvb' % (ttl, nvg, ng, nb, nvb)
+        else:
+          msg += 'no sat info'
+        return msg
+
+  def load (self):
+    self.loader = gpsgen_loader()
+    self.loader.start()
+
+  def cleanup (self):
+    if self.loader != None:
+      self.loader.terminate()
+
 
 
 def loader ():
@@ -189,10 +311,17 @@ def loader_curses (w):
   gpsdw.start()
   gpsdw.start_gpsd()
 
+  gpsliw = gpsgen()
+  gpsliw.start()
+  gpsliw.load()
+
   try:
     while True:
       println(w, fmt_line('GPS Device', dw.status()), 1, 2)
       println(w, fmt_line('GPS Daemon', gpsdw.status()), 2, 2)
+      println(w, fmt_line('GPS Listener', gpsliw.status()), 3, 2)
+
+      println(w, w.getkey(), 5, 2)
 
       time.sleep(0.01)
   except KeyboardInterrupt:
@@ -200,10 +329,11 @@ def loader_curses (w):
 
   dw.terminate()
   gpsdw.terminate()
+  gpsliw.terminate()
 
 def fmt_line (header, status):
   HEADER_WIDTH = 20
-  STATUS_WIDTH = 35
+  STATUS_WIDTH = 45
 
   if status == None:
     status = '-- no status --'
