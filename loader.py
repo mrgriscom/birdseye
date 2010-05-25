@@ -8,6 +8,7 @@ import signal
 import Queue
 import re
 from gps import gpslistener
+from gps import gpslogger
 import socket
 import math
 import logging
@@ -202,7 +203,7 @@ class gpsd (monitor_thread):
 
 class gpsgen_loader (threading.Thread):
   SERVER_RETRY_WAIT = 5.
-  LISTENER_RETRY_WAIT = 5.
+  LISTENER_RETRY_WAIT = 3.
 
   def __init__(self):
     threading.Thread.__init__(self)
@@ -319,12 +320,50 @@ class gpsgen (monitor_thread):
     if self.loader != None:
       self.loader.terminate()
 
+class log_watcher (monitor_thread):
+  def __init__ (self, poll_interval=None):
+    monitor_thread.__init__(self, poll_interval)
+    self.logger = None
+
+  def launch (self):
+    self.logger = gpslogger.gpslogger()
+    self.logger.start()
+
+  def cleanup (self):
+    if self.logger:
+      self.logger.terminate()
+
+  def get_status (self, _):
+    return 6
+
+  def get_status_info (self, connected):
+    if self.logger:
+      if not self.logger.dbconn:
+        return 'not connected to db'
+      elif not self.logger.gps:
+        if self.logger.dispatch_retry_at != None:
+          return 'can\'t connect to gps; retry in %d' % int(math.ceil(self.logger.dispatch_retry_at - time.time()))
+        else:
+          return 'connecting to gps...'
+      else:
+        return 'up; %d fixes buffered' % len(self.logger.buffer)
+    else:
+      return 'logger down'
 
 
-def loader ():
-  curses.wrapper(loader_curses)
+def sighup (type, frame):
+  global HUP_recvd
+  HUP_recvd = True
 
-def loader_curses (w):
+def init_sig ():
+  global HUP_recvd
+  HUP_recvd = False
+  signal.signal(signal.SIGHUP, sighup)
+
+def loader (logging_enabled=True):
+  curses.wrapper(loader_curses, logging_enabled)
+
+def loader_curses (w, logging_enabled):
   curses.curs_set(0)
   w.nodelay(1)
 
@@ -339,15 +378,21 @@ def loader_curses (w):
   gpsliw.start()
   gpsliw.load()
 
+  gpslg = log_watcher()
+  gpslg.start()
+  if logging_enabled:
+    gpslg.launch()
+
   up = True
   while up:
     try:
       println(w, fmt_line('GPS Device', dw.status()), 1, 2)
       println(w, fmt_line('GPS Daemon', gpsdw.status()), 2, 2)
       println(w, fmt_line('GPS Listener', gpsliw.status()), 3, 2)
+      println(w, fmt_line('GPS Logger', gpslg.status()), 4, 2)
 
-      println(w, 'ESC:   quit', 8, 2)
-      println(w, 'F2:    reboot gpsd', 9, 2)
+      println(w, 'ESC:   shut down', 8, 2)
+      println(w, 'F2:    reconnect gps', 9, 2)
 
       try:
         key = w.getkey()
@@ -361,6 +406,11 @@ def loader_curses (w):
 #      elif key == 'KEY_F(3)':
 #        flash(gpsdw, gpsliw)
 
+#todo: figure this out
+#      if HUP_recvd:
+#        HUP_recvd = False
+#        restart(gpsdw)
+
       time.sleep(0.01)
     except KeyboardInterrupt:
       up = False
@@ -368,6 +418,7 @@ def loader_curses (w):
   dw.terminate()
   gpsdw.terminate()
   gpsliw.terminate()
+  gpslg.terminate()
 
 def restart (gpsdw):
   gpsdw.restart_gpsd()
@@ -395,4 +446,7 @@ def println (w, str, y, x=0):
 
 if __name__ == "__main__":
 
-  loader()
+  logging_enabled = ('nolog' not in sys.argv[1:])
+
+  init_sig()
+  loader(logging_enabled)
