@@ -399,9 +399,9 @@ def loader_curses (w, logging_enabled):
       except:
         key = ''
 
-      if key in ('\x1b', '^['):
+      if key in ('\x1b', '^[', 'q'):
         up = False
-      elif key == 'KEY_F(2)':
+      elif key in ('KEY_F(2)', ' '):
         restart(gpsdw)
 #      elif key == 'KEY_F(3)':
 #        flash(gpsdw, gpsliw)

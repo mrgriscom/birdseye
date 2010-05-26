@@ -18,11 +18,13 @@ class tracker(threading.Thread):
       self.v = None
       self.t = None
 
-      try:
-        self.gps = gpslistener.gps_subscription()
-      except gpslistener.linesocket.CantConnect:
-        print 'cannot connect to gps dispatcher'
-        sys.exit()
+      self.gps = None
+      while not self.gps:
+        try:
+          self.gps = gpslistener.gps_subscription()
+        except gpslistener.linesocket.CantConnect:
+          print 'cannot connect to gps dispatcher; retrying in 5...'
+          time.sleep(5)
     else:
       self.demo = True
       self.update_loc(*demo)
