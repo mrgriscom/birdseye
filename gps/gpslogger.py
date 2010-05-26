@@ -60,15 +60,17 @@ class gpslogger (threading.Thread):
     if self.gps:
       while self.up:
         try:
-          while True:
-            data = self.gps.get_fix()
-            if data != None:
-              self.buffer.append(data)
-              if self.buffer_age == None:
-                self.buffer_age = time.time()
+          data = self.gps.get_fix()
+          if data != None:
+            self.buffer.append(data)
+            if self.buffer_age == None:
+              self.buffer_age = time.time()
 
-            if len(self.buffer) >= self.MAX_BUFFER or (time.time() - self.buffer_age) > self.COMMIT_INTERVAL:
-              self.flushbuffer()
+          if len(self.buffer) >= self.MAX_BUFFER or (self.buffer_age != None and (time.time() - self.buffer_age) > self.COMMIT_INTERVAL):
+            self.flushbuffer()
+        except gpslistener.linesocket.BrokenConnection:
+          logging.warn('gpslogger: broken connection; exiting...')
+          self.terminate()
         except:
           logging.exception('error in main logger loop')
 

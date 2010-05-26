@@ -129,6 +129,8 @@ class gps_listener (threading.Thread):
   def run (self):
     try:
       self.listen_gps()
+    except linesocket.BrokenConnection:
+      logging.warn('gpslistener: broken connection; exiting...')
     except:
       logging.exception('gpslistener')
 
