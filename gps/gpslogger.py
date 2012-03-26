@@ -4,6 +4,7 @@ import sys
 import logging
 import threading
 import time
+import zmq
 
 def insert_query (table, column_mapping):
   columns = ', '.join(column_mapping.keys())

@@ -9,6 +9,7 @@ import Queue
 import re
 from gps import gpslistener
 from gps import gpslogger
+from gps.messaging import MessageSocket
 import socket
 import math
 import logging
@@ -238,7 +239,7 @@ class gpsgen_loader (threading.Thread):
           self.listener_retry_at = None
           self.listener = gpslistener.gps_listener(self.dispatcher.queue)
           self.listener.start()
-        except gpslistener.linesocket.CantConnect, e:
+        except MessageSocket.ConnectionFailed, e:
           self.listener_retry_at = time.time() + self.LISTENER_RETRY_WAIT
           self.interruptable_wait(self.LISTENER_RETRY_WAIT)
 
