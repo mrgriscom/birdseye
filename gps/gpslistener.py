@@ -290,7 +290,8 @@ class GPSDispatcher(threading.Thread):
             if self.is_report_complete():
                 self.dispatch_report()
         elif status == 'new-sample':
-            self.dispatch_report()
+            if not self.is_dispatched():
+                self.dispatch_report()
             self.start_new_report(data)
             self.handle_data(data)
         else:
@@ -348,6 +349,8 @@ class GPSDispatcher(threading.Thread):
         return self.active_report.get('dispatched', False)
 
     def dispatch_report(self):
+        assert not self.is_dispatched()
+
         self.active_report['dispatched'] = True
         self.report_timeout = None
 
@@ -413,9 +416,7 @@ class GPSSubscription():
         self.poller.register(self.socket, zmq.POLLIN)
 
     def get_fix(self, timeout=1.):
-        print 'aa'
-        result = dict(self.poller.poll(timeout))
-        print 'bb'
+        result = dict(self.poller.poll(1000 * timeout))
         if result.get(self.socket) == zmq.POLLIN:
             data = pickle.loads(self.socket.recv())
             data['systime'] = datetime.utcnow()
@@ -465,14 +466,11 @@ if __name__ == '__main__':
         for t in threads:
             t.start()
 
-        print threads
-
         running = True
         try:
             while running:
                 time.sleep(1)
                 if not all(t.is_alive() for t in threads):
-                    print threads
                     logging.error('thread encountered fatal error')
                     running = False
         except KeyboardInterrupt:
