@@ -14,6 +14,7 @@ import socket
 import math
 import logging
 import logging.handlers
+import zmq
 
 DEVICE = '/dev/ttyUSB0'
 BAUD = 57600
@@ -219,42 +220,44 @@ class gpsgen_loader (threading.Thread):
     self.listener_term = False
 
   def run (self):
-    while not self.server and self.up:
-      try:
-        self.server_retry_at = None
-        self.server = gpslistener.gps_server()
-        self.server.start()
-      except socket.error:
-        self.server_retry_at = time.time() + self.SERVER_RETRY_WAIT
-        self.interruptable_wait(self.SERVER_RETRY_WAIT)
+    def init_server():
+      while self.up:
+        try:
+          self.server_retry_at = None
+          return gpslistener.GPSServer()
+        except zmq.ZMQError: #socket.error:
+          self.server_retry_at = time.time() + self.SERVER_RETRY_WAIT
+          self.interruptable_wait(self.SERVER_RETRY_WAIT)
+    self.server = init_server()
 
     if self.server:
-      self.dispatcher = gpslistener.gps_dispatcher(self.server)
+      self.dispatcher = gpslistener.GPSDispatcher(self.server, gpslistener.BU353DevicePolicy()) # TODO make device policy a config param
       self.dispatcher.start()
 
-    time.sleep(0.5)
-    while self.up:
-      while not self.listener and self.up:
-        try:
-          self.listener_retry_at = None
-          self.listener = gpslistener.gps_listener(self.dispatcher.queue)
-          self.listener.start()
-        except MessageSocket.ConnectionFailed, e:
-          self.listener_retry_at = time.time() + self.LISTENER_RETRY_WAIT
-          self.interruptable_wait(self.LISTENER_RETRY_WAIT)
-
+      time.sleep(0.5)
       while self.up:
-        if not self.listener.isAlive():
-          self.listener = None
-          self.listener_term = True
-          self.listener_retry_at = time.time() + self.LISTENER_RETRY_WAIT
-          self.interruptable_wait(self.LISTENER_RETRY_WAIT)
-          self.listener_term = False
-          break
+        while not self.listener and self.up:
+          try:
+            self.listener_retry_at = None
+            self.listener = gpslistener.GPSListener(self.dispatcher.queue)
+            self.listener.start()
+          except MessageSocket.ConnectionFailed, e:
+            self.listener_retry_at = time.time() + self.LISTENER_RETRY_WAIT
+            self.interruptable_wait(self.LISTENER_RETRY_WAIT)
 
-    for t in [self.listener, self.dispatcher, self.server]:
-      if t != None and t.isAlive():
-        t.terminate()
+        while self.up:
+          if not self.listener.isAlive():
+            self.listener = None
+            self.listener_term = True
+            self.listener_retry_at = time.time() + self.LISTENER_RETRY_WAIT
+            self.interruptable_wait(self.LISTENER_RETRY_WAIT)
+            self.listener_term = False
+            break
+
+      for t in [self.listener, self.dispatcher]:
+        if t != None and t.isAlive():
+          t.terminate()
+      self.server.close()
 
   def interruptable_wait (self, n, inc=.3):
     k = 0.

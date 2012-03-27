@@ -239,11 +239,11 @@ class GPSDispatcher(threading.Thread):
     data
     """
 
-    def __init__(self, broadcast, device_policy=StubDevicePolicy()):
+    def __init__(self, server, device_policy=StubDevicePolicy()):
         threading.Thread.__init__(self)
         self.up = True
 
-        self.broadcast = broadcast
+        self.server = server
         self.device_policy = device_policy
         self.queue = Queue.Queue()
 
@@ -386,23 +386,25 @@ class GPSDispatcher(threading.Thread):
 
     def dispatch(self, report):
         if self.report_sufficient(report):
-            self.broadcast(report)
+            self.server.broadcast(report)
             self.last_fix_at = time.time()
         else:
             logging.warn('report does not contain minimally-required data')     
 
-@contextmanager
-def gps_server():
+class GPSServer(object):
     """socket to broadcast out position fixes"""
 
-    context = zmq.Context()
-    sock = context.socket(zmq.PUB)
-    sock.bind('tcp://*:%d' % DISPATCH_PORT)
+    def __init__(self):
+        self.context = zmq.Context()
+        self.sock = self.context.socket(zmq.PUB)
+        self.sock.bind('tcp://*:%d' % DISPATCH_PORT)
 
-    yield lambda data: sock.send(pickle.dumps(data))
+    def broadcast(self, data):
+        self.sock.send(pickle.dumps(data))
 
-    sock.close()
-    context.term()
+    def close(self):
+        self.sock.close()
+        self.context.term()
 
 class GPSSubscription():
     def __init__(self):
@@ -449,38 +451,39 @@ class BU353DevicePolicy(StubDevicePolicy):
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)
 
-    with gps_server() as broadcast:
-        try:
-            dispatcher = GPSDispatcher(broadcast, BU353DevicePolicy())
-        except zmq.ZMQError:
-            logging.exception('cannot bind dispatcher')
-            sys.exit()
+    try:
+        server = GPSServer()
+        dispatcher = GPSDispatcher(server, BU353DevicePolicy())
+    except zmq.ZMQError:
+        logging.exception('cannot bind dispatcher')
+        sys.exit()
 
-        try:
-            listener = GPSListener(dispatcher.queue)
-        except MessageSocket.ConnectionFailed:
-            logging.error('cannot connect to gpsd service')
-            sys.exit()
+    try:
+        listener = GPSListener(dispatcher.queue)
+    except MessageSocket.ConnectionFailed:
+        logging.error('cannot connect to gpsd service')
+        sys.exit()
 
-        threads = [listener, dispatcher]
-        for t in threads:
-            t.start()
+    threads = [listener, dispatcher]
+    for t in threads:
+        t.start()
 
-        running = True
-        try:
-            while running:
-                time.sleep(1)
-                if not all(t.is_alive() for t in threads):
-                    logging.error('thread encountered fatal error')
-                    running = False
-        except KeyboardInterrupt:
-            logging.info('shutdown request from user')
+    running = True
+    try:
+        while running:
+            time.sleep(1)
+            if not all(t.is_alive() for t in threads):
+                logging.error('thread encountered fatal error')
+                running = False
+    except KeyboardInterrupt:
+        logging.info('shutdown request from user')
 
-        logging.info('shutting down...')
-        for t in reversed(threads):
-            t.terminate()
-        for t in threads:
-            t.join()
-    
+    logging.info('shutting down...')
+    for t in reversed(threads):
+        t.terminate()
+    for t in threads:
+        t.join()
+    server.close()
+
     logging.info('shut down complete')
     sys.exit()

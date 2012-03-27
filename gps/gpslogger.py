@@ -53,7 +53,7 @@ class gpslogger (threading.Thread):
     while not self.gps and self.up:
       try:
         self.dispatch_retry_at = None
-        self.gps = gpslistener.gps_subscription()
+        self.gps = gpslistener.GPSSubscription()
       except gpslistener.linesocket.CantConnect:
         self.dispatch_retry_at = time.time() + self.DISPATCH_RETRY_WAIT
         self.interruptable_wait(self.DISPATCH_RETRY_WAIT)
@@ -69,7 +69,7 @@ class gpslogger (threading.Thread):
 
           if len(self.buffer) >= self.MAX_BUFFER or (self.buffer_age != None and (time.time() - self.buffer_age) > self.COMMIT_INTERVAL):
             self.flushbuffer()
-        except gpslistener.linesocket.BrokenConnection:
+        except ValueError: # TODO what kind of error here? zmq?? gpslistener.linesocket.BrokenConnection:
           logging.warn('gpslogger: broken connection; exiting...')
           self.terminate()
         except:
