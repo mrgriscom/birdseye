@@ -5,11 +5,11 @@ import time
 from datetime import datetime
 import sys
 import logging
-from messaging import MessageSocket
+from util.messaging import MessageSocket
 import zmq
 import json
 import pickle
-import config
+import settings
 from contextlib import contextmanager
 import math
 
@@ -145,10 +145,10 @@ def process_sat(message):
     }
 
     satinfo = message.get('satellites')
-    if satinfo:
-        return ('sat', dict((s['PRN'], dict((k, s[v]) for k, v in fields.iteritems()))for s in satinfo))
-    else:
+    if not satinfo:
         return None
+
+    return ('sat', dict((s['PRN'], dict((k, s[v]) for k, v in fields.iteritems()))for s in satinfo))
 
 def parse_message_old(message):
     handlers = {
@@ -299,10 +299,10 @@ class GPSDispatcher(threading.Thread):
 
     def start_new_report(self, data):
         self.active_report = {'time': data['time'], 'tags': set()}
-        self.report_timeout = time.time() + config.buffer_window
+        self.report_timeout = time.time() + settings.GPS_BUFFER_WINDOW
 
     def sample_timeline(self, data):
-        if abs(self.active_report['time'] - data['time']) < config.sample_window:
+        if abs(self.active_report['time'] - data['time']) < settings.GPS_SAMPLE_WINDOW:
             return 'same-sample'
         elif data['time'] > self.active_report['time']:
             return 'new-sample'
@@ -430,7 +430,7 @@ class GPSSubscription():
         self.socket.close()
         self.context.term()
 
-        
+
 def f_eq(a, b):
     try:
         return abs(a - b) < 1.0e-9
@@ -468,13 +468,12 @@ if __name__ == '__main__':
     for t in threads:
         t.start()
 
-    running = True
     try:
-        while running:
-            time.sleep(1)
+        while True:
+            time.sleep(0.1)
             if not all(t.is_alive() for t in threads):
                 logging.error('thread encountered fatal error')
-                running = False
+                break
     except KeyboardInterrupt:
         logging.info('shutdown request from user')
 
