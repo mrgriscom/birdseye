@@ -8,7 +8,10 @@ import logging
 from util.messaging import MessageSocket
 import util.util as u
 import zmq
-import json
+try:
+    import json
+except ImportError:
+    import simplejson as json
 import pickle
 import settings
 from contextlib import contextmanager
@@ -191,7 +194,7 @@ def parse_nav_msg(pieces):
         except ValueError:
             pass
         
-        return ('nav', data)
+        return data
     elif tag == '?':
         # no fix data
         return {'class': 'TPV', 'mode': 1}
@@ -209,8 +212,7 @@ def parse_sat_msg(pieces):
             s['used'] = bool(s['used'])
             return s
 
-        data = {'class': 'SKY', 'tag': tag, 'satellites': [make_sat(s) for s in satinfo[1:] if s]}
-        return ('sat', data)
+        return {'class': 'SKY', 'tag': tag, 'satellites': [make_sat(s) for s in satinfo[1:] if s]}
     elif tag in ['GSA']:
         # ignore
         return None
