@@ -1,7 +1,7 @@
 
 
 # database connector for tile info
-TILE_DB = 'navdata'
+TILE_DB = 'postgresql:///navdata'
 
 # root directory where tiles are stored
 TILE_ROOT = '/home/drew/tiles/'
@@ -25,7 +25,9 @@ GPS_BUFFER_WINDOW = 0.3 #seconds
 GPS_DEVICE_POLICY = 'gps.gpslistener.BU353DevicePolicy'
 
 # database connector for tracklog
-GPS_LOG_DB = 'geoloc'
+GPS_LOG_DB = 'postgresql:///geoloc'
+
+UNITS = 'us' # 'us' or 'metric'
 
 try:
     from localsettings import *

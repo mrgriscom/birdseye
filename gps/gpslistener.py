@@ -378,8 +378,24 @@ class GPSDispatcher(threading.Thread):
             clear_field('v_error', 'drop-vdop-noalt')
 
         for fe in ('h_error', 'v_error'):
-            if f_eq(report[fe], 0.):
+            if util.f_eq(report[fe], 0.):
                 report[fe] = None
+
+        if report['speed'] is None:
+            clear_field('heading', 'v-wo-bear')
+        if report['heading'] is None:
+            if util.f_eq(report['speed'], 0.):
+                report['heading'] = 0.
+            else:
+                clear_field('speed', 'bear-wo-v')
+
+        if report['speed'] is not None:
+            if report['heading'] < 0:
+                report['heading'] += 360.
+
+            if report['speed'] < 0.:
+                report['speed'] = -report['speed']
+                report['heading'] = (report['heading'] + 180.) % 360.
 
         self.device_policy.cleanup(report)
         return report
@@ -406,7 +422,7 @@ class GPSServer(object):
         self.sock.close()
         self.context.term()
 
-class GPSSubscription():
+class GPSSubscription(object):
     def __init__(self):
         # support for a connection timeout?
         self.context = zmq.Context()
@@ -430,12 +446,19 @@ class GPSSubscription():
         self.socket.close()
         self.context.term()
 
+class GPSSubscriber(object):
+    def __init__(self, retry_interval):
+        self.retry_interval = retry_interval
+        self.retry_at = None
 
-def f_eq(a, b):
-    try:
-        return abs(a - b) < 1.0e-9
-    except TypeError:
-        return a == b
+    def acquire(self, abortfunc=lambda: False):
+        while not abortfunc():
+            try:
+                self.retry_at = None
+                return GPSSubscription()
+            except zmq.ZMQError:
+                self.retry_at = time.time() + self.retry_interval
+                util.wait(self.retry_interval, abortfunc)
 
 
 class BU353DevicePolicy(StubDevicePolicy):
@@ -445,8 +468,8 @@ class BU353DevicePolicy(StubDevicePolicy):
                 report[field] = None
                 report['comments'].append(comment)
 
-        clean('climb', lambda x: f_eq(x, 0.), 'ign-zero-climb')
-        clean('v_error', lambda x: f_eq(x, 8.), 'ign-perfect-vdop')
+        clean('climb', lambda x: util.f_eq(x, 0.), 'ign-zero-climb')
+        clean('v_error', lambda x: util.f_eq(x, 8.), 'ign-perfect-vdop')
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)

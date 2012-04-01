@@ -1,103 +1,117 @@
 import gpslistener
-import psycopg2
-import sys
 import logging
 import threading
 import time
 import zmq
+import settings
 
-def insert_query (table, column_mapping):
-  columns = ', '.join(column_mapping.keys())
-  fields = ', '.join(map(lambda f: '%%(%s)s' % f, column_mapping.values()))
-  return 'insert into %s (%s) values (%s);' % (table, columns, fields)
+from sqlalchemy import create_engine, Column, DateTime, Float, String, CheckConstraint
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
 
-insert_gps_fix = insert_query('gps_log', {
-  'gps_time': 'time',
-  'system_time': 'systime',
-  'latitude': 'lat',
-  'longitude': 'lon',
-  'altitude': 'alt',
-  'speed': 'speed',
-  'heading': 'heading',
-  'climb': 'climb',
-  'err_horiz': 'h_error',
-  'err_vert': 'v_error',
-  'type_of_fix': 'fix_type',
-  'comment': 'comment'
-})
+fields = [
+    ('gps_time', {'type': DateTime, 'args': {'primary_key': True}, 'field': 'time'}),
+    ('system_time', {'type': DateTime, 'args': {'nullable': False}, 'field': 'systime'}),
+    ('latitude', {'type': Float, 'min': -90., 'max': 90., 'args': {'nullable': False}, 'field': 'lat'}),
+    ('longitude', {'type': Float, 'min': -180., 'max': 180., 'args': {'nullable': False}, 'field': 'lon'}),
+    ('altitude', {'type': Float, 'min': -1000., 'max': 100000., 'field': 'alt'}),
+    ('speed', {'type': Float, 'min': 0., 'max': 1000.}),
+    ('heading', {'type': Float, 'min': 0., 'max': 360., 'closed': True}),
+    ('climb', {'type': Float, 'min': -1000., 'max': 1000.}),
+    ('h_error', {'type': Float, 'min': 0., 'max': 5000.}),
+    ('v_error', {'type': Float, 'min': 0., 'max': 5000.}),
+    ('fix_type', {'type': String}),
+    ('comment', {'type': String}),
+]
+
+Base = declarative_base()
+class Fix(Base):
+    __tablename__ = 'gps_log'
+
+    gps_time = Column(DateTime, primary_key=True)
+
+    def __init__(self, data):
+        data['comment'] = ','.join(data['comments']) if data['comments'] else None
+        for field, config in fields:
+            setattr(self, field, data[config.get('field') or field])
+
+for field, config in fields:
+    if config.get('args', {}).get('primary_key'):
+        continue
+
+    args = []
+    if config.get('min') is not None:
+        args.append(CheckConstraint('%s >= %s and %s %s %s' % (field, config['min'], field, '<' if config.get('closed') else '<=', config['max'])))
+    col = Column(config['type'], *args, **config.get('args', {}))
+    setattr(Fix, field, col)
 
 
 
-class gpslogger (threading.Thread):
-  MAX_BUFFER = 60       #points
-  COMMIT_INTERVAL = 180 #seconds
-  DISPATCH_RETRY_WAIT = 3.
+class GPSLogger(threading.Thread):
+    MAX_BUFFER = 60        # fixes
+    COMMIT_INTERVAL = 180  # seconds
+    DISPATCH_RETRY_WAIT = 3.
 
-  def __init__(self):
-    threading.Thread.__init__(self)
-    self.up = True
+    def __init__(self, dbconnector):
+        threading.Thread.__init__(self)
+        self.up = True
 
-    self.dbconn = None
-    self.gps = None
-    self.dispatch_retry_at = None
-    self.buffer = []
-    self.buffer_age = None
+        self.engine = create_engine(dbconnector, echo=True)
+        self.dbsess = None
+        self.gps_acquire = None
+        self.gps = None
+        self.buffer_age = None
 
-  def run (self):
-    try:
-      self.dbconn = psycopg2.connect(database='geoloc')
-    except:
-      logging.exception('gpslogger can\'t connect to db')
-      return
+        Base.metadata.create_all(self.engine)
 
-    while not self.gps and self.up:
-      try:
-        self.dispatch_retry_at = None
-        self.gps = gpslistener.GPSSubscription()
-      except gpslistener.linesocket.CantConnect:
-        self.dispatch_retry_at = time.time() + self.DISPATCH_RETRY_WAIT
-        self.interruptable_wait(self.DISPATCH_RETRY_WAIT)
+    def terminate (self):
+        self.up = False
 
-    if self.gps:
-      while self.up:
+    def run (self):
         try:
-          data = self.gps.get_fix()
-          if data != None:
-            self.buffer.append(data)
-            if self.buffer_age == None:
-              self.buffer_age = time.time()
-
-          if len(self.buffer) >= self.MAX_BUFFER or (self.buffer_age != None and (time.time() - self.buffer_age) > self.COMMIT_INTERVAL):
-            self.flushbuffer()
-        except ValueError: # TODO what kind of error here? zmq?? gpslistener.linesocket.BrokenConnection:
-          logging.warn('gpslogger: broken connection; exiting...')
-          self.terminate()
+            self.dbsess = sessionmaker(bind=self.engine)()
         except:
-          logging.exception('error in main logger loop')
+            logging.exception('gpslogger can\'t connect to db')
+            return
 
-      self.flushbuffer()
-      self.gps.unsubscribe()
+        self.gps_acquire = gpslistener.GPSSubscriber(self.DISPATCH_RETRY_WAIT)
+        self.gps = self.gps_acquire.acquire(lambda: not self.up)
+        if not self.gps:
+            return
 
-    self.dbconn.close()
+        while self.up:
+            try:
+                data = self.gps.get_fix()
+                if data != None:
+                    self.process_fix(data)
 
-  def terminate (self):
-    self.up = False
+                if self.flush_due():
+                    self.flush()
+            except zmq.ZMQError:
+                logging.warn('gpslogger: broken connection; exiting...')
+                self.terminate()
+            except:
+                logging.exception('error in main logger loop')
 
-  def flushbuffer(self):
-    curs = self.dbconn.cursor()
-    for p in self.buffer:
-      try:
-        curs.execute(insert_gps_fix, p)
-      except:
-        logging.exception('error committing fix: ' + str(p))
-    self.dbconn.commit()
-    curs.close()
-    self.buffer = []
-    self.buffer_age = None
+        self.flush()
+        self.gps.unsubscribe()
+        session.close()
 
-  def interruptable_wait (self, n, inc=.3):
-    k = 0.
-    while self.up and k < n - 1.0e-9:
-      time.sleep(min(inc, n - k))
-      k += inc
+    def process_fix(self, data):
+        self.dbsess.add(Fix(data))
+        if self.buffer_age is None:
+            self.buffer_age = time.time()
+
+    def flush_due(self):
+        if self.buffer_age and time.time() - self.buffer_age > self.COMMIT_INTERVAL:
+            return True
+        elif len(self.dbsess.new) >= self.MAX_BUFFER:
+            return True
+
+    def flush(self):
+        try:
+            self.dbsess.commit()
+        except:
+            logging.exception('error committing fixes')
+        self.buffer_age = None
 
