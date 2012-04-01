@@ -6,6 +6,7 @@ from datetime import datetime
 import sys
 import logging
 from util.messaging import MessageSocket
+import util.util as u
 import zmq
 import json
 import pickle
@@ -62,8 +63,8 @@ class GPSListener(threading.Thread):
 
     def listen_gps(self):
         # enable watcher mode
-        self.socket.send('W=1') # old protocol
-        self.socket.send('?WATCH={"class":"WATCH","json":true}') # new protocol
+        self.socket.send('W=1\n') # old protocol
+        self.socket.send('?WATCH={"class":"WATCH","json":true}\n') # new protocol
 
         while self.up:
             try:
@@ -378,13 +379,13 @@ class GPSDispatcher(threading.Thread):
             clear_field('v_error', 'drop-vdop-noalt')
 
         for fe in ('h_error', 'v_error'):
-            if util.f_eq(report[fe], 0.):
+            if u.f_eq(report[fe], 0.):
                 report[fe] = None
 
         if report['speed'] is None:
             clear_field('heading', 'v-wo-bear')
         if report['heading'] is None:
-            if util.f_eq(report['speed'], 0.):
+            if u.f_eq(report['speed'], 0.):
                 report['heading'] = 0.
             else:
                 clear_field('speed', 'bear-wo-v')
@@ -458,7 +459,7 @@ class GPSSubscriber(object):
                 return GPSSubscription()
             except zmq.ZMQError:
                 self.retry_at = time.time() + self.retry_interval
-                util.wait(self.retry_interval, abortfunc)
+                u.wait(self.retry_interval, abortfunc)
 
 
 class BU353DevicePolicy(StubDevicePolicy):
@@ -468,8 +469,8 @@ class BU353DevicePolicy(StubDevicePolicy):
                 report[field] = None
                 report['comments'].append(comment)
 
-        clean('climb', lambda x: util.f_eq(x, 0.), 'ign-zero-climb')
-        clean('v_error', lambda x: util.f_eq(x, 8.), 'ign-perfect-vdop')
+        clean('climb', lambda x: u.f_eq(x, 0.), 'ign-zero-climb')
+        clean('v_error', lambda x: u.f_eq(x, 8.), 'ign-perfect-vdop')
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)

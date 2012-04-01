@@ -9,15 +9,14 @@ import Queue
 import re
 from gps import gpslistener
 from gps import gpslogger
-from gps.messaging import MessageSocket
+from util.messaging import MessageSocket
 import socket
 import math
 import logging
 import logging.handlers
 import zmq
+import settings
 
-DEVICE = '/dev/ttyUSB0'
-BAUD = 57600
 POLL_INTERVAL = 1.
 
 def init_logging ():
@@ -81,9 +80,10 @@ class device_watcher (monitor_thread):
     return 'device connected' if connected else 'device not connected'
 
 class gpsd_process (threading.Thread):
-  def __init__(self, device):
+  def __init__(self, device, rate):
     threading.Thread.__init__(self)
     self.device = device
+    self.rate = rate
     self.queue = Queue.Queue()
 
   def boot (self):
@@ -119,15 +119,15 @@ class gpsd_process (threading.Thread):
         break
     return lines
 
-  def set_rate (self, baud=BAUD):
-    command = 'stty -F %s %d' % (self.device, baud)
+  def set_rate (self, baud=None):
+    command = 'stty -F %s %d' % (self.device, baud or self.rate)
     subprocess.Popen(command.split(), stderr=subprocess.PIPE)
 
 
 class gpsd (monitor_thread):
-  def __init__ (self, device, poll_interval=.2):
+  def __init__ (self, device, rate, poll_interval=.2):
     monitor_thread.__init__(self, poll_interval)
-    self.device = device
+    self.gpsd_args = (device, rate)
     self.gpsd = None
 
   def get_status (self, status):
@@ -163,7 +163,7 @@ class gpsd (monitor_thread):
       else:
         msg = 'gpsd up; device offline'
 
-      if status['online'] and status['speed'] != BAUD:
+      if status['online'] and status['speed'] != self.gpsd.rate:
         msg += '; ' + ('slow! (%.1f)' % (status['speed']/1000.) if status['speed'] else 'speed unknown')
 
       return msg
@@ -172,7 +172,7 @@ class gpsd (monitor_thread):
 
   def start_gpsd (self):
     if self.gpsd == None or not self.gpsd.isAlive():
-      self.gpsd = gpsd_process(self.device)
+      self.gpsd = gpsd_process(*self.gpsd_args)
       self.gpsd.start()
     else:
       logging.warn('gpsd already running')
@@ -330,7 +330,7 @@ class log_watcher (monitor_thread):
     self.logger = None
 
   def launch (self):
-    self.logger = gpslogger.gpslogger()
+    self.logger = gpslogger.GPSLogger(settings.GPS_LOG_DB)
     self.logger.start()
 
   def cleanup (self):
@@ -342,15 +342,15 @@ class log_watcher (monitor_thread):
 
   def get_status_info (self, connected):
     if self.logger:
-      if not self.logger.dbconn:
+      if not self.logger.dbsess:
         return 'not connected to db'
       elif not self.logger.gps:
-        if self.logger.dispatch_retry_at != None:
-          return 'can\'t connect to gps; retry in %d' % int(math.ceil(self.logger.dispatch_retry_at - time.time()))
+        if self.logger.gps_acquire.retry_at != None:
+          return 'can\'t connect to gps; retry in %d' % int(math.ceil(self.logger.gps_acquire.retry_at - time.time()))
         else:
           return 'connecting to gps...'
       else:
-        return 'up; %d fixes buffered' % len(self.logger.buffer)
+        return 'up; %d fixes buffered' % self.logger.buffer_size()
     else:
       return 'logger down'
 
@@ -371,10 +371,10 @@ def loader_curses (w, logging_enabled):
   curses.curs_set(0)
   w.nodelay(1)
 
-  dw = device_watcher('/dev/ttyUSB0')
+  dw = device_watcher(settings.GPS_DEVICE)
   dw.start()
 
-  gpsdw = gpsd('/dev/ttyUSB0')
+  gpsdw = gpsd(settings.GPS_DEVICE, settings.BAUD_RATE)
   gpsdw.start()
   gpsdw.start_gpsd()
 

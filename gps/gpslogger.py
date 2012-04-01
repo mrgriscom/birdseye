@@ -39,10 +39,10 @@ for field, config in fields:
     if config.get('args', {}).get('primary_key'):
         continue
 
-    args = []
+    args = [config['type']]
     if config.get('min') is not None:
         args.append(CheckConstraint('%s >= %s and %s %s %s' % (field, config['min'], field, '<' if config.get('closed') else '<=', config['max'])))
-    col = Column(config['type'], *args, **config.get('args', {}))
+    col = Column(*args, **config.get('args', {}))
     setattr(Fix, field, col)
 
 
@@ -56,10 +56,11 @@ class GPSLogger(threading.Thread):
         threading.Thread.__init__(self)
         self.up = True
 
-        self.engine = create_engine(dbconnector, echo=True)
+        self.engine = create_engine(dbconnector)
         self.dbsess = None
         self.gps_acquire = None
         self.gps = None
+        self.buffer = []
         self.buffer_age = None
 
         Base.metadata.create_all(self.engine)
@@ -95,23 +96,30 @@ class GPSLogger(threading.Thread):
 
         self.flush()
         self.gps.unsubscribe()
-        session.close()
+        self.dbsess.close()
 
     def process_fix(self, data):
-        self.dbsess.add(Fix(data))
+        self.buffer.append(data)
         if self.buffer_age is None:
             self.buffer_age = time.time()
+
+    def buffer_size(self):
+        return len(self.buffer)
 
     def flush_due(self):
         if self.buffer_age and time.time() - self.buffer_age > self.COMMIT_INTERVAL:
             return True
-        elif len(self.dbsess.new) >= self.MAX_BUFFER:
+        elif self.buffer_size() >= self.MAX_BUFFER:
             return True
 
     def flush(self):
-        try:
-            self.dbsess.commit()
-        except:
-            logging.exception('error committing fixes')
+        for fix in self.buffer:
+            try:
+                self.dbsess.add(Fix(fix))
+                self.dbsess.commit()
+            except:
+                logging.exception('error committing fix: %s' % fix)
+                self.dbsess.rollback()
+        self.buffer = []
         self.buffer_age = None
 
