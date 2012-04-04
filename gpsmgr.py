@@ -1,3 +1,5 @@
+from __future__ import with_statement
+
 import threading
 import curses
 import time
@@ -10,447 +12,461 @@ import re
 from gps import gpslistener
 from gps import gpslogger
 from util.messaging import MessageSocket
+import util.util as u
 import socket
 import math
 import logging
 import logging.handlers
 import zmq
 import settings
+from optparse import OptionParser
 
-POLL_INTERVAL = 1.
+class Monitor(threading.Thread):
+    """a thread that monitors some other activity and maintains a
+    queryable status"""
 
-def init_logging ():
-  LOG_FILE = 'birdseye.log'
-  root = logging.getLogger()
-  root.setLevel(logging.DEBUG)
-  handler = logging.handlers.RotatingFileHandler(LOG_FILE, maxBytes=2**20, backupCount=3)
-  handler.setFormatter(logging.Formatter('%(asctime)s:%(levelname)s:%(message)s'))
-  root.addHandler(handler)
-init_logging()
-
-class monitor_thread (threading.Thread):
-  def __init__ (self, poll_interval=None):
-    threading.Thread.__init__(self)
-    self.poll_interval = poll_interval if poll_interval != None else POLL_INTERVAL
-    self.up = True
-    self.lock = threading.Lock()
-    self.status_data = None
+    def __init__(self, poll_interval):
+        threading.Thread.__init__(self)
+        self.poll_interval = poll_interval
+        self.up = True
+        self.lock = threading.Lock()
+        self.raw_status = None
   
-  def terminate (self):
-    self.up = False
-    self.cleanup()
+    def terminate(self):
+        self.up = False
+        self.cleanup()
 
-  def run (self):
-    while self.up:
-      self.body()
-      time.sleep(self.poll_interval)
-
-  def body (self):
-    self.set()
-
-  def cleanup (self):
-    pass
-
-  def set (self):
-    self.lock.acquire()
-    self.status_data = self.get_status(self.status_data)
-    self.lock.release()
-
-  def get_status (self, current_status):
-    raise Exception('abstract method')
-
-  def status (self):
-    self.lock.acquire()
-    info = self.get_status_info(self.status_data) if self.status_data != None else None
-    self.lock.release()
-    return info
-
-  def get_status_info (self, status_data):
-    raise Exception('abstract method')
-
-class device_watcher (monitor_thread):
-  def __init__ (self, device_name, poll_interval=None):
-    monitor_thread.__init__(self, poll_interval)
-    self.device_name = device_name
-
-  def get_status (self, _):
-    return os.path.exists(self.device_name)
-
-  def get_status_info (self, connected):
-    return 'device connected' if connected else 'device not connected'
-
-class gpsd_process (threading.Thread):
-  def __init__(self, device, rate):
-    threading.Thread.__init__(self)
-    self.device = device
-    self.rate = rate
-    self.queue = Queue.Queue()
-
-  def boot (self):
-    self.set_rate()
-    command = 'gpsd -b -N -n -D 2 %s' % self.device
-    self.p = subprocess.Popen(command.split(), stderr=subprocess.PIPE)
-
-  def run (self):
-    self.boot()
-
-    while True:
-      line = self.p.stderr.readline()
-      if line:
-        logging.debug(line.strip())
-        self.queue.put(line.strip())
-      else:
-        break
-
-  def terminate (self):
-    os.kill(self.p.pid, signal.SIGTERM)
-
-  #this isn't a good idea; it tends to crash gpsd and/or make it behave strangely
-  def flash (self):
-    self.set_rate()
-    os.kill(self.p.pid, signal.SIGHUP)
-
-  def output (self):
-    lines = []
-    while True:
-      try:
-        lines.append(self.queue.get(False))
-      except Queue.Empty:
-        break
-    return lines
-
-  def set_rate (self, baud=None):
-    command = 'stty -F %s %d' % (self.device, baud or self.rate)
-    subprocess.Popen(command.split(), stderr=subprocess.PIPE)
-
-
-class gpsd (monitor_thread):
-  def __init__ (self, device, rate, poll_interval=.2):
-    monitor_thread.__init__(self, poll_interval)
-    self.gpsd_args = (device, rate)
-    self.gpsd = None
-
-  def get_status (self, status):
-    if status == None:
-      status = {'up': None, 'online': None, 'speed': None}
-
-    if self.gpsd:
-      status['up'] = True
-      
-      output = self.gpsd.output()
-      for ln in output:
-        if 'device open failed' in ln:
-          status['online'] = False
-        elif 'GPS is offline' in ln:
-          status['online'] = False
-        elif 'opened GPS' in ln:
-          status['online'] = True
-        else:
-          m = re.search('speed +([0-9]+)', ln)
-          if m:
-            status['speed'] = int(m.group(1))
-    else:
-      status['up'] = False
-
-    return status
-
-  def get_status_info (self, status):
-    if status['up']:
-      if status['online'] == None:
-        msg = 'gpsd up; searching for device...'
-      elif status['online']:
-        msg = 'gpsd online'
-      else:
-        msg = 'gpsd up; device offline'
-
-      if status['online'] and status['speed'] != self.gpsd.rate:
-        msg += '; ' + ('slow! (%.1f)' % (status['speed']/1000.) if status['speed'] else 'speed unknown')
-
-      return msg
-    else:
-      return 'gpsd not up'
-
-  def start_gpsd (self):
-    if self.gpsd == None or not self.gpsd.isAlive():
-      self.gpsd = gpsd_process(*self.gpsd_args)
-      self.gpsd.start()
-    else:
-      logging.warn('gpsd already running')
-
-  def stop_gpsd (self):
-    if self.gpsd != None and self.gpsd.isAlive():
-      self.gpsd.terminate()
-
-      #wait for process to terminate
-      for i in range(0, 100):
-        if not self.gpsd.isAlive():
-          break
-        time.sleep(0.1)
-
-      if self.gpsd.isAlive():
-        logging.error('gpsd didn\'t terminate after lengthy wait!')
-    else:
-      logging.warn('gpsd not running')
-
-  def restart_gpsd (self):
-    self.stop_gpsd()
-    self.start_gpsd()
-
-  #this isn't a good idea; it tends to crash gpsd and/or make it behave strangely
-  def flash_gpsd (self):
-    self.gpsd.flash()
-
-  def cleanup (self):
-    self.stop_gpsd()
-
-class gpsgen_loader (threading.Thread):
-  SERVER_RETRY_WAIT = 5.
-  LISTENER_RETRY_WAIT = 3.
-
-  def __init__(self):
-    threading.Thread.__init__(self)
-    
-    self.up = True
-
-    self.server = None
-    self.server_retry_at = None
-    self.dispatcher = None
-    self.listener = None
-    self.listener_retry_at = None
-    self.listener_term = False
-
-  def run (self):
-    def init_server():
-      while self.up:
-        try:
-          self.server_retry_at = None
-          return gpslistener.GPSServer()
-        except zmq.ZMQError: #socket.error:
-          self.server_retry_at = time.time() + self.SERVER_RETRY_WAIT
-          self.interruptable_wait(self.SERVER_RETRY_WAIT)
-    self.server = init_server()
-
-    if self.server:
-      self.dispatcher = gpslistener.GPSDispatcher(self.server, gpslistener.BU353DevicePolicy()) # TODO make device policy a config param
-      self.dispatcher.start()
-
-      time.sleep(0.5)
-      while self.up:
-        while not self.listener and self.up:
-          try:
-            self.listener_retry_at = None
-            self.listener = gpslistener.GPSListener(self.dispatcher.queue)
-            self.listener.start()
-          except MessageSocket.ConnectionFailed, e:
-            self.listener_retry_at = time.time() + self.LISTENER_RETRY_WAIT
-            self.interruptable_wait(self.LISTENER_RETRY_WAIT)
-
+    def run(self):
         while self.up:
-          if not self.listener.isAlive():
-            self.listener = None
-            self.listener_term = True
-            self.listener_retry_at = time.time() + self.LISTENER_RETRY_WAIT
-            self.interruptable_wait(self.LISTENER_RETRY_WAIT)
-            self.listener_term = False
-            break
+            self.poll_status()
+            time.sleep(self.poll_interval)
 
-      for t in [self.listener, self.dispatcher]:
-        if t != None and t.isAlive():
-          t.terminate()
-      self.server.close()
+    def cleanup(self):
+        pass
 
-  def interruptable_wait (self, n, inc=.3):
-    k = 0.
-    while self.up and k < n - 1.0e-9:
-      time.sleep(min(inc, n - k))
-      k += inc
+    def poll_status(self):
+        with self.lock:
+            self.raw_status = self.get_status(self.raw_status)
 
-  def terminate (self):
-    self.up = False
+    def get_status(self, current_status):
+        raise Exception('abstract method')
 
-class gpsgen (monitor_thread):
-  def __init__(self, poll_interval=.3):
-    monitor_thread.__init__(self, poll_interval)
-    self.loader = None
+    def status(self):
+        with self.lock:
+            return self.format_status(self.raw_status) if self.raw_status is not None else None
 
-  def get_status (self, stat):
-    return 6
+    def format_status(self, raw):
+        raise Exception('abstract method')
 
-  def get_status_info (self, _):
-    l = self.loader
-    if l == None:
-      return 'listener not up'
-    elif l.server == None:
-      if l.server_retry_at == None:
-        return 'loading dispatcher...'
-      else:
-        return 'dispatcher: can\'t bind port; retry in %d' % int(math.ceil(l.server_retry_at - time.time()))
-    elif l.listener == None:
-      if l.listener_retry_at == None:
-        return 'loading listener...'
-      else:
-        return '%s; retry in %d' % ('gpsd terminated' if l.listener_term else 'can\'t connect to gpsd', int(math.ceil(l.listener_retry_at - time.time())))
-    else:
-      since_fix = time.time() - l.dispatcher.last_fix_at if l.dispatcher.last_fix_at else None
-      since_ping = time.time() - l.listener.last_data_at if l.listener.last_data_at else None
+class DeviceWatcher(Monitor):
+    """monitor if gps device is present at hardware level"""
 
-      if l.listener.sirf_alert:
-        return 'gps is in SiRF mode!'
-      elif since_ping == None:
-        return 'no data yet from gpsd'
-      elif since_fix != None and since_fix < 5.:
-        return 'lookin\' good!'
-      elif since_ping > 10.:
-        return 'no data from gpsd in %d' % int(since_ping)
-      else:
-        msg = ('no fix in %d' % int(since_fix)) if since_fix != None else 'no fix yet'
-        msg += '; '
-        if l.listener.sat_info != None:
-          ttl = len(l.listener.sat_info)
-          nvg = len([s for s in l.listener.sat_info.values() if s['snr'] >= 40.])
-          ng = len([s for s in l.listener.sat_info.values() if s['snr'] >= 30. and s['snr'] < 40.])
-          nb = len([s for s in l.listener.sat_info.values() if s['snr'] >= 20. and s['snr'] < 30.])
-          nvb = len([s for s in l.listener.sat_info.values() if s['snr'] > 0. and s['snr'] < 20.])
-          msg += '%d sats %dvg/%dg/%db/%dvb' % (ttl, nvg, ng, nb, nvb)
+    def __init__(self, device_name, poll_interval=1.):
+        Monitor.__init__(self, poll_interval)
+        self.device_name = device_name
+
+    def get_status(self, _):
+        return os.path.exists(self.device_name)
+
+    def format_status(self, connected):
+        return 'device connected' if connected else 'device not connected'
+
+class GPSDProcess(threading.Thread):
+    """wrapper around the gpsd system process"""
+
+    def __init__(self, device, rate):
+        threading.Thread.__init__(self)
+        self.device = device
+        self.rate = rate
+        self.queue = Queue.Queue()
+
+    def boot(self):
+        self.set_rate()
+        command = 'gpsd -b -N -n -D 2 %s' % self.device
+        self.p = subprocess.Popen(command.split(), stderr=subprocess.PIPE)
+
+    def run(self):
+        self.boot()
+
+        while True:
+            line = self.p.stderr.readline()
+            if line:
+                logging.debug(line.strip())
+                self.queue.put(line.strip())
+            else:
+                break
+
+    def terminate(self):
+        os.kill(self.p.pid, signal.SIGTERM)
+
+    #this isn't a good idea; it tends to crash gpsd and/or make it behave strangely
+    def flash(self):
+        self.set_rate()
+        os.kill(self.p.pid, signal.SIGHUP)
+
+    def output(self):
+        while True:
+            try:
+                yield self.queue.get(False)
+            except Queue.Empty:
+                break
+
+    def set_rate(self, baud=None):
+        command = 'stty -F %s %d' % (self.device, baud or self.rate)
+        subprocess.Popen(command.split(), stderr=subprocess.PIPE)
+
+class GPSD(Monitor):
+    """monitor the status of the gpsd daemon"""
+
+    def __init__(self, device, rate, poll_interval=.2):
+        Monitor.__init__(self, poll_interval)
+        self.gpsd_args = (device, rate)
+        self.gpsd = None
+
+    def get_status(self, status):
+        if status is None:
+            status = {'up': None, 'online': None, 'speed': None}
+
+        if self.gpsd and self.gpsd.isAlive():
+            status['up'] = True
+      
+            for ln in self.gpsd.output():
+                if 'device open failed' in ln:
+                    status['online'] = False
+                elif 'GPS is offline' in ln:
+                    status['online'] = False
+                elif 'opened GPS' in ln:
+                    status['online'] = True
+                else:
+                    m = re.search('speed +([0-9]+)', ln)
+                    if m:
+                        status['speed'] = int(m.group(1))
         else:
-          msg += 'no sat info'
-        return msg
+            status['up'] = False
 
-  def load (self):
-    self.loader = gpsgen_loader()
-    self.loader.start()
+        return status
 
-  def cleanup (self):
-    if self.loader != None:
-      self.loader.terminate()
+    def format_status(self, status):
+        if status['up']:
+            if status['online'] == None:
+                msg = 'gpsd up; searching for device...'
+            elif status['online']:
+                msg = 'gpsd online'
+            else:
+                msg = 'gpsd up; device offline'
+          
+            if status['online'] and status['speed'] != self.gpsd.rate:
+                msg += '; ' + ('slow! (%.1f)' % (status['speed']/1000.) if status['speed'] else 'speed unknown')
 
-class log_watcher (monitor_thread):
-  def __init__ (self, poll_interval=None):
-    monitor_thread.__init__(self, poll_interval)
-    self.logger = None
-
-  def launch (self):
-    self.logger = gpslogger.GPSLogger(settings.GPS_LOG_DB)
-    self.logger.start()
-
-  def cleanup (self):
-    if self.logger:
-      self.logger.terminate()
-
-  def get_status (self, _):
-    return 6
-
-  def get_status_info (self, connected):
-    if self.logger:
-      if not self.logger.dbsess:
-        return 'not connected to db'
-      elif not self.logger.gps:
-        if self.logger.gps_acquire.retry_at != None:
-          return 'can\'t connect to gps; retry in %d' % int(math.ceil(self.logger.gps_acquire.retry_at - time.time()))
+            return msg
         else:
-          return 'connecting to gps...'
-      else:
-        return 'up; %d fixes buffered' % self.logger.buffer_size()
-    else:
-      return 'logger down'
+            return 'gpsd not up'
+
+    def start_gpsd(self):
+        if self.gpsd == None or not self.gpsd.isAlive():
+            self.gpsd = GPSDProcess(*self.gpsd_args)
+            self.gpsd.start()
+        else:
+            logging.warn('gpsd already running')
+
+    def stop_gpsd(self):
+        if self.gpsd != None and self.gpsd.isAlive():
+            self.gpsd.terminate()
+            try:
+                u.wait(10., lambda: not self.gpsd.isAlive())
+                if self.gpsd.isAlive():
+                    logging.error('gpsd didn\'t terminate after lengthy wait!')
+            except u.Interrupted:
+                pass
+        else:
+            logging.warn('gpsd not running')
+
+    def restart_gpsd(self):
+        self.stop_gpsd()
+        self.start_gpsd()
+
+    #this isn't a good idea; it tends to crash gpsd and/or make it behave strangely
+    def flash_gpsd(self):
+        self.gpsd.flash()
+
+    def cleanup(self):
+        self.stop_gpsd()
+
+class DispatchLoader(threading.Thread):
+    """initialize the gps broadcaster (intermediary between gpsd and our clients), and
+    keep it up against all odds.
+
+    we assume our own sockets are reliable, and only initialize them once. however, the
+    socket that connects to gpsd is re-initialized as needed.
+    """
+
+    SERVER_RETRY_WAIT = 5.
+    LISTENER_RETRY_WAIT = 3.
+
+    def __init__(self):
+        threading.Thread.__init__(self)
+        
+        self.up = True
+
+        self.server_acquire = None
+        self.server = None
+
+        self.dispatcher = None
+
+        self.listener_acquire = None
+        self.listener = None
+        self.listener_first_conn = False
+
+    def terminate(self):
+        self.up = False
+
+    def run(self):
+        self.server_acquire = u.Acquirer(gpslistener.GPSServer, self.SERVER_RETRY_WAIT, zmq.ZMQError)
+        self.server = self.server_acquire.acquire(lambda: not self.up)
+
+        self.dispatcher = gpslistener.GPSDispatcher(self.server, gpslistener.BU353DevicePolicy()) # TODO make device policy a config param
+        self.dispatcher.start()
+
+        def mk_listener_acquire():
+            return u.Acquirer(lambda: gpslistener.GPSListener(self.dispatcher.queue), self.LISTENER_RETRY_WAIT, MessageSocket.ConnectionFailed)
+
+        time.sleep(0.5)
+        self.listener_acquire = mk_listener_acquire()
+        try:
+            while self.up:
+                self.listener = self.listener_acquire.acquire(lambda: not self.up, not self.listener_first_conn)
+                self.listener.start()
+                self.listener_first_conn = True
+
+                while self.up:
+                    time.sleep(0.01)
+                    if not self.listener.isAlive():
+                        self.listener = None
+                        self.listener_acquire = mk_listener_acquire()
+                        # note: clearing 'listener' before calling acquire() gives a (very) small
+                        # window for the status message to revert to generic instead of 'retry in
+                        # X'... don't really care
+                        break
+
+            if self.listener:
+                self.listener.terminate()
+        finally:
+            self.dispatcher.terminate()
+            self.server.close()
+
+class DispatchWatcher(Monitor):
+    def __init__(self, poll_interval=.3):
+        Monitor.__init__(self, poll_interval)
+        self.loader = None
+
+    def get_status(self, _):
+        return True
+
+    def format_status(self, _):
+        l = self.loader
+        if l == None:
+            return 'listener not up'
+        elif l.server == None:
+            if retry_at(l.server_acquire) == None:
+                return 'loading dispatcher...'
+            else:
+                return 'dispatcher: can\'t bind port; retry in %d' % retry_in(l.server_acquire)
+        elif l.listener == None:
+            if retry_at(l.listener_acquire) == None:
+                return 'loading listener...'
+            else:
+                return '%s; retry in %d' % ('gpsd terminated' if l.listener_first_conn else 'can\'t connect to gpsd', retry_in(l.listener_acquire))
+        else:
+            since_fix = time.time() - l.dispatcher.last_fix_at if l.dispatcher.last_fix_at else None
+            since_ping = time.time() - l.listener.last_data_at if l.listener.last_data_at else None
+
+            if since_ping == None:
+                return 'no data yet from gpsd'
+            elif since_ping > 10.:
+                return 'no data from gpsd in %d' % int(since_ping)
+            elif l.listener.sirf_alert:
+                return 'gps is in SiRF mode!'
+            elif since_fix != None and since_fix < 5.:
+                return 'lookin\' good!'
+            else:
+                msg = ('no fix in %d' % int(since_fix)) if since_fix != None else 'no fix yet'
+                msg += '; ' + (sat_status(l.listener.sat_info) if l.listener.sat_info else 'no sat info')
+                return msg
+
+    def load(self):
+        self.loader = DispatchLoader()
+        self.loader.start()
+
+    def cleanup(self):
+        if self.loader:
+            self.loader.terminate()
+
+def sat_status(satinfo):
+    def bucket(snr):
+        if snr >= 40.:
+            return 'vg'
+        elif snr >= 30.:
+            return 'g'
+        elif snr >= 20.:
+            return 'b'
+        else:
+            return 'vb'
+    buckets = map_reduce(satinfo.values(), lambda s: [(bucket(s['snr']),)], len)
+    buckets['ttl'] = len(satinfo)
+    return '%(ttl)d sats %(vg)dvg/%(g)dg/%(b)db/%(vb)dvb' % buckets
+
+class LogWatcher(Monitor):
+    """monitor the tracklogger
+
+    note: we only initialize the logger/acquire the subscription once, and assume
+    it is persistent and reliable (reasonable assumption, because both ends of that
+    socket are under our control)"""
+
+    def __init__(self, poll_interval=1.):
+        Monitor.__init__(self, poll_interval)
+        self.logger = None
+
+    def launch(self):
+        self.logger = gpslogger.GPSLogger(settings.GPS_LOG_DB)
+        self.logger.start()
+
+    def cleanup(self):
+        if self.logger:
+            self.logger.terminate()
+
+    def get_status(self, _):
+        return True
+
+    def format_status(self, _):
+        if self.logger:
+            if not self.logger.dbsess:
+                return 'not connected to db'
+            elif not self.logger.gps:
+                if retry_at(self.logger.gps_acquire) != None:
+                    return 'can\'t connect to gps; retry in %d' % retry_in(self.logger.gps_acquire)
+                else:
+                    return 'connecting to gps...'
+            else:
+                return 'up; %d fixes buffered' % self.logger.buffer_size()
+        else:
+            return 'logger down'
 
 
-def sighup (type, frame):
-  global HUP_recvd
-  HUP_recvd = True
+def retry_at(acq):
+    return acq.retry_at if acq else None
 
-def init_sig ():
-  global HUP_recvd
-  HUP_recvd = False
-  signal.signal(signal.SIGHUP, sighup)
+def retry_in(acq):
+    return int(math.ceil(acq.retry_at - time.time()))
 
-def loader (logging_enabled=True):
-  curses.wrapper(loader_curses, logging_enabled)
 
-def loader_curses (w, logging_enabled):
-  curses.curs_set(0)
-  w.nodelay(1)
+def sighup(type, frame):
+    global HUP_recvd
+    HUP_recvd = True
 
-  dw = device_watcher(settings.GPS_DEVICE)
-  dw.start()
+HUP_recvd = False
+def init_signal_handlers():
+    signal.signal(signal.SIGHUP, sighup)
 
-  gpsdw = gpsd(settings.GPS_DEVICE, settings.BAUD_RATE)
-  gpsdw.start()
-  gpsdw.start_gpsd()
 
-  gpsliw = gpsgen()
-  gpsliw.start()
-  gpsliw.load()
 
-  gpslg = log_watcher()
-  gpslg.start()
-  if logging_enabled:
-    gpslg.launch()
 
-  up = True
-  while up:
+def loader(options):
+    curses.wrapper(loader_curses, options)
+
+def loader_curses(win, options):
+    curses.curs_set(0)
+    win.nodelay(1)
+
+    w_device = DeviceWatcher(settings.GPS_DEVICE)
+    w_device.start()
+
+    w_gpsd = GPSD(settings.GPS_DEVICE, settings.BAUD_RATE)
+    w_gpsd.start()
+    w_gpsd.start_gpsd()
+
+    w_dispatch = DispatchWatcher()
+    w_dispatch.start()
+    w_dispatch.load()
+
+    w_tracklog = LogWatcher()
+    w_tracklog.start()
+    if options.tracklog:
+        w_tracklog.launch()
+
+    watchers = [
+        (w_device, 'GPS Device'),
+        (w_gpsd, 'GPS Daemon'),
+        (w_dispatch, 'GPS Listener'),
+        (w_tracklog, 'GPS Logger'),
+    ]
+
+    def restart():
+        w_gpsd.restart_gpsd()
+
+    #def flash():
+    #    w_gpsd.flash_gpsd()
+    #    # TODO: trigger listener to reconnect
+
     try:
-      println(w, fmt_line('GPS Device', dw.status()), 1, 2)
-      println(w, fmt_line('GPS Daemon', gpsdw.status()), 2, 2)
-      println(w, fmt_line('GPS Listener', gpsliw.status()), 3, 2)
-      println(w, fmt_line('GPS Logger', gpslg.status()), 4, 2)
+        while True:
+            for i, (watcher, caption) in enumerate(watchers):
+                println(win, fmt_line(caption, watcher.status()), i + 1, 2)
 
-      println(w, 'ESC:   shut down', 8, 2)
-      println(w, 'F2:    reconnect gps', 9, 2)
+            println(win, 'ESC:   shut down', 8, 2)
+            println(win, 'F2:    reconnect gps', 9, 2)
 
-      try:
-        key = w.getkey()
-      except:
-        key = ''
+            try:
+                key = win.getkey()
+            except:
+                key = ''
 
-      if key in ('\x1b', '^[', 'q'):
-        up = False
-      elif key in ('KEY_F(2)', ' '):
-        restart(gpsdw)
-#      elif key == 'KEY_F(3)':
-#        flash(gpsdw, gpsliw)
+            if key in ('\x1b', '^[', 'q'):
+                break
+            elif key in ('KEY_F(2)', ' '):
+                restart()
+            #elif key == 'KEY_F(3)':
+            #    flash()
 
-#todo: figure this out
-#      if HUP_recvd:
-#        HUP_recvd = False
-#        restart(gpsdw)
+            global HUP_recvd
+            if HUP_recvd:
+                logging.debug('HUP!')
+                HUP_recvd = False
+                restart()
 
-      time.sleep(0.01)
+            time.sleep(0.01)
     except KeyboardInterrupt:
-      up = False
+        pass
 
-  dw.terminate()
-  gpsdw.terminate()
-  gpsliw.terminate()
-  gpslg.terminate()
+    w_device.terminate()
+    w_gpsd.terminate()
+    w_dispatch.terminate()
+    w_tracklog.terminate()
 
-def restart (gpsdw):
-  gpsdw.restart_gpsd()
+def fmt_line(header, status):
+    HEADER_WIDTH = 20
+    STATUS_WIDTH = 45
 
-#def flash (gpsdw, gpsliw):
-#  gpsdw.flash_gpsd()
-#  #trigger listener to reconnect
+    if status == None:
+        status = '-- no status --'
 
-def fmt_line (header, status):
-  HEADER_WIDTH = 20
-  STATUS_WIDTH = 45
+    return header.ljust(HEADER_WIDTH) + ' [' + status.rjust(STATUS_WIDTH) + ']'
 
-  if status == None:
-    status = '-- no status --'
-
-  return header.ljust(HEADER_WIDTH) + ' [' + status.rjust(STATUS_WIDTH) + ']'
-
-def println (w, str, y, x=0):
-  w.addstr(y, x, str)
-  w.clrtoeol()
-  w.refresh()
-
-
+def println(w, str, y, x=0):
+    w.addstr(y, x, str)
+    w.clrtoeol()
+    w.refresh()
 
 
 if __name__ == "__main__":
+    settings.init_logging()
+    init_signal_handlers()
 
-  logging_enabled = ('nolog' not in sys.argv[1:])
+    parser = OptionParser()
+    parser.add_option('-x', '--no-tracklog', dest='tracklog', action='store_false', default=True,
+                      help='don\'t store tracklog')
 
-  init_sig()
-  loader(logging_enabled)
+    (options, args) = parser.parse_args()
+
+    loader(options)
+
+  

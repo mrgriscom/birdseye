@@ -1,4 +1,4 @@
-
+import logging
 
 # database connector for tile info
 TILE_DB = 'postgresql:///navdata'
@@ -27,7 +27,19 @@ GPS_DEVICE_POLICY = 'gps.gpslistener.BU353DevicePolicy'
 # database connector for tracklog
 GPS_LOG_DB = 'postgresql:///geoloc'
 
+# measurement units
 UNITS = 'us' # 'us' or 'metric'
+
+# logging config
+LOGFILE = '/tmp/birdseye.log'
+def init_logging():
+    root = logging.getLogger()
+    root.setLevel(logging.DEBUG)
+    handler = logging.handlers.RotatingFileHandler(LOGFILE, maxBytes=2**24, backupCount=3)
+    handler.setFormatter(logging.Formatter('%(asctime)s:%(levelname)s:%(message)s'))
+    root.addHandler(handler)
+
+
 
 try:
     from localsettings import *

@@ -48,6 +48,8 @@ for field, config in fields:
 
 
 class GPSLogger(threading.Thread):
+    """subscribe to position fixes from gps, and log them to database"""
+
     MAX_BUFFER = 60        # fixes
     COMMIT_INTERVAL = 180  # seconds
     DISPATCH_RETRY_WAIT = 3.
@@ -75,29 +77,28 @@ class GPSLogger(threading.Thread):
             logging.exception('gpslogger can\'t connect to db')
             return
 
-        self.gps_acquire = gpslistener.GPSSubscriber(self.DISPATCH_RETRY_WAIT)
-        self.gps = self.gps_acquire.acquire(lambda: not self.up)
-        if not self.gps:
+        try:
+            self.gps_acquire = gpslistener.GPSSubscriber(self.DISPATCH_RETRY_WAIT)
+            self.gps = self.gps_acquire.acquire(lambda: not self.up)
+
+            while self.up:
+                try:
+                    data = self.gps.get_fix()
+                    if data != None:
+                        self.process_fix(data)
+
+                    if self.flush_due():
+                        self.flush()
+                except zmq.ZMQError:
+                    logging.warn('gpslogger: broken connection; exiting...')
+                    self.terminate()
+                except:
+                    logging.exception('error in main logger loop')
+
+            self.flush()
+            self.gps.unsubscribe()
+        finally:
             self.dbsess.close()
-            return
-
-        while self.up:
-            try:
-                data = self.gps.get_fix()
-                if data != None:
-                    self.process_fix(data)
-
-                if self.flush_due():
-                    self.flush()
-            except zmq.ZMQError:
-                logging.warn('gpslogger: broken connection; exiting...')
-                self.terminate()
-            except:
-                logging.exception('error in main logger loop')
-
-        self.flush()
-        self.gps.unsubscribe()
-        self.dbsess.close()
 
     def process_fix(self, data):
         self.buffer.append(Fix(data))

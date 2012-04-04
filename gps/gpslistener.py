@@ -449,20 +449,9 @@ class GPSSubscription(object):
         self.socket.close()
         self.context.term()
 
-class GPSSubscriber(object):
+class GPSSubscriber(u.Acquirer):
     def __init__(self, retry_interval):
-        self.retry_interval = retry_interval
-        self.retry_at = None
-
-    def acquire(self, abortfunc=lambda: False):
-        while not abortfunc():
-            try:
-                self.retry_at = None
-                return GPSSubscription()
-            except zmq.ZMQError:
-                self.retry_at = time.time() + self.retry_interval
-                u.wait(self.retry_interval, abortfunc)
-
+        u.Acquirer.__init__(self, GPSSubscription, retry_interval, zmq.ZMQError)
 
 class BU353DevicePolicy(StubDevicePolicy):
     def cleanup(self, report):
