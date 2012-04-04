@@ -4,19 +4,15 @@ import threading
 import curses
 import time
 import os
-import sys
 import subprocess
 import signal
-import Queue
 import re
 from gps import gpslistener
 from gps import gpslogger
 from util.messaging import MessageSocket
 import util.util as u
-import socket
 import math
 import logging
-import logging.handlers
 import zmq
 import settings
 from optparse import OptionParser
@@ -50,7 +46,7 @@ class Monitor(threading.Thread):
 
     def get_status(self):
         """override: return data representing the current status"""
-        return True
+        raise Exception('override me')
 
     def status(self):
         with self.lock:
@@ -59,12 +55,12 @@ class Monitor(threading.Thread):
     def format_status(self, raw):
         """override: given result from get_status(), format into
           a human-readable status message"""
-        raise Exception('abstract method')
+        return str(raw)
 
 class DeviceWatcher(Monitor):
     """monitor if gps device is present at hardware level"""
 
-    def __init__(self, device_name, poll_interval=1.):
+    def __init__(self, device_name, poll_interval=0.2):
         Monitor.__init__(self, poll_interval)
         self.device_name = device_name
 
@@ -134,7 +130,7 @@ class GPSDProcess(threading.Thread):
 class GPSD(Monitor):
     """monitor the status of the gpsd daemon"""
 
-    def __init__(self, device, rate, poll_interval=.2):
+    def __init__(self, device, rate, poll_interval=0.2):
         Monitor.__init__(self, poll_interval)
         self.gpsd_args = (device, rate)
         self.gpsd = None
@@ -255,11 +251,11 @@ class DispatchLoader(threading.Thread):
             self.server.close()
 
 class DispatchWatcher(Monitor):
-    def __init__(self, poll_interval=.3):
+    def __init__(self, poll_interval=0.2):
         Monitor.__init__(self, poll_interval)
         self.loader = None
 
-    def format_status(self, _):
+    def get_status(self):
         l = self.loader
         if l == None:
             return 'listener not up'
@@ -331,7 +327,7 @@ class LogWatcher(Monitor):
         if self.logger:
             self.logger.terminate()
 
-    def format_status(self, _):
+    def get_status(self):
         if self.logger:
             if not self.logger.dbsess:
                 return 'not connected to db'

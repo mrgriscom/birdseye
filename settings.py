@@ -1,4 +1,5 @@
 import logging
+import logging.handlers
 
 # database connector for tile info
 TILE_DB = 'postgresql:///navdata'
