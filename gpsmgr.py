@@ -46,16 +46,19 @@ class Monitor(threading.Thread):
 
     def poll_status(self):
         with self.lock:
-            self.raw_status = self.get_status(self.raw_status)
+            self.raw_status = self.get_status()
 
-    def get_status(self, current_status):
-        raise Exception('abstract method')
+    def get_status(self):
+        """override: return data representing the current status"""
+        return True
 
     def status(self):
         with self.lock:
             return self.format_status(self.raw_status) if self.raw_status is not None else None
 
     def format_status(self, raw):
+        """override: given result from get_status(), format into
+          a human-readable status message"""
         raise Exception('abstract method')
 
 class DeviceWatcher(Monitor):
@@ -65,7 +68,7 @@ class DeviceWatcher(Monitor):
         Monitor.__init__(self, poll_interval)
         self.device_name = device_name
 
-    def get_status(self, _):
+    def get_status(self):
         return os.path.exists(self.device_name)
 
     def format_status(self, connected):
@@ -78,7 +81,8 @@ class GPSDProcess(threading.Thread):
         threading.Thread.__init__(self)
         self.device = device
         self.rate = rate
-        self.queue = Queue.Queue()
+        self.status = {}
+        self.statuslock = threading.Lock()
 
     def boot(self):
         self.set_rate()
@@ -92,7 +96,7 @@ class GPSDProcess(threading.Thread):
             line = self.p.stderr.readline()
             if line:
                 logging.debug(line.strip())
-                self.queue.put(line.strip())
+                self.process_output(line.strip())
             else:
                 break
 
@@ -104,12 +108,24 @@ class GPSDProcess(threading.Thread):
         self.set_rate()
         os.kill(self.p.pid, signal.SIGHUP)
 
-    def output(self):
-        while True:
-            try:
-                yield self.queue.get(False)
-            except Queue.Empty:
-                break
+    def process_output(self, ln):
+        with self.statuslock:
+            if 'device open failed' in ln:
+                self.status['online'] = False
+            elif 'GPS is offline' in ln:
+                self.status['online'] = False
+            elif 'opened GPS' in ln:
+                self.status['online'] = True
+            elif 'already running' in ln:
+                self.status['rogue'] = True
+            else:
+                m = re.search('speed +([0-9]+)', ln)
+                if m:
+                    self.status['speed'] = int(m.group(1))
+
+    def get_status(self):
+        with self.statuslock:
+            return dict(self.status)
 
     def set_rate(self, baud=None):
         command = 'stty -F %s %d' % (self.device, baud or self.rate)
@@ -123,44 +139,28 @@ class GPSD(Monitor):
         self.gpsd_args = (device, rate)
         self.gpsd = None
 
-    def get_status(self, status):
-        if status is None:
-            status = {'up': None, 'online': None, 'speed': None}
-
-        if self.gpsd and self.gpsd.isAlive():
-            status['up'] = True
-      
-            for ln in self.gpsd.output():
-                if 'device open failed' in ln:
-                    status['online'] = False
-                elif 'GPS is offline' in ln:
-                    status['online'] = False
-                elif 'opened GPS' in ln:
-                    status['online'] = True
-                else:
-                    m = re.search('speed +([0-9]+)', ln)
-                    if m:
-                        status['speed'] = int(m.group(1))
-        else:
-            status['up'] = False
-
+    def get_status(self):
+        status = self.gpsd.get_status() if self.gpsd else {}
+        status['up'] = (self.gpsd and self.gpsd.isAlive())
         return status
 
     def format_status(self, status):
         if status['up']:
-            if status['online'] == None:
-                msg = 'gpsd up; searching for device...'
-            elif status['online']:
-                msg = 'gpsd online'
-            else:
-                msg = 'gpsd up; device offline'
-          
-            if status['online'] and status['speed'] != self.gpsd.rate:
-                msg += '; ' + ('slow! (%.1f)' % (status['speed']/1000.) if status['speed'] else 'speed unknown')
+            online = status.get('online')
+            speed = status.get('speed')
+
+            msg = {
+                True: 'gpsd online',
+                False: 'gpsd up; device offline',
+                None: 'gpsd up; searching for device...',
+            }[online]
+
+            if online and speed != self.gpsd.rate:
+                msg += '; ' + ('slow! (%.1f)' % (speed / 1000.) if speed else 'speed unknown')
 
             return msg
         else:
-            return 'gpsd not up'
+            return 'gpsd not up' + (' (rogue instance?)' if status.get('rogue') else '')
 
     def start_gpsd(self):
         if self.gpsd == None or not self.gpsd.isAlive():
@@ -259,9 +259,6 @@ class DispatchWatcher(Monitor):
         Monitor.__init__(self, poll_interval)
         self.loader = None
 
-    def get_status(self, _):
-        return True
-
     def format_status(self, _):
         l = self.loader
         if l == None:
@@ -333,9 +330,6 @@ class LogWatcher(Monitor):
     def cleanup(self):
         if self.logger:
             self.logger.terminate()
-
-    def get_status(self, _):
-        return True
 
     def format_status(self, _):
         if self.logger:
