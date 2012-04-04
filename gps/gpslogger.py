@@ -78,6 +78,7 @@ class GPSLogger(threading.Thread):
         self.gps_acquire = gpslistener.GPSSubscriber(self.DISPATCH_RETRY_WAIT)
         self.gps = self.gps_acquire.acquire(lambda: not self.up)
         if not self.gps:
+            self.dbsess.close()
             return
 
         while self.up:
@@ -99,7 +100,7 @@ class GPSLogger(threading.Thread):
         self.dbsess.close()
 
     def process_fix(self, data):
-        self.buffer.append(data)
+        self.buffer.append(Fix(data))
         if self.buffer_age is None:
             self.buffer_age = time.time()
 
@@ -113,13 +114,26 @@ class GPSLogger(threading.Thread):
             return True
 
     def flush(self):
-        for fix in self.buffer:
-            try:
-                self.dbsess.add(Fix(fix))
-                self.dbsess.commit()
-            except:
-                logging.exception('error committing fix: %s' % fix)
-                self.dbsess.rollback()
+        commit_buffer(self.dbsess, self.buffer)
         self.buffer = []
         self.buffer_age = None
 
+def commit_buffer(dbsess, fixbuf):
+    """try to commit as a batch in as few transactions as possible; drill
+    down to identify individual fixes that cause error"""
+
+    if not fixbuf:
+        return
+
+    try:
+        dbsess.add_all(fixbuf)
+        dbsess.commit()
+    except:
+        dbsess.rollback()
+
+        if len(fixbuf) == 1:
+            logging.exception('error committing fix: %s' % fixbuf[0].__dict__)
+        else:
+            split = len(fixbuf) / 2
+            commit_buffer(dbsess, fixbuf[:split])
+            commit_buffer(dbsess, fixbuf[split:])
