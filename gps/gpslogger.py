@@ -132,7 +132,7 @@ def commit_buffer(dbsess, fixbuf):
         dbsess.rollback()
 
         if len(fixbuf) == 1:
-            logging.exception('error committing fix: %s' % fixbuf[0].__dict__)
+            logging.error('error committing fix: %s' % fixbuf[0].__dict__)
         else:
             split = len(fixbuf) / 2
             commit_buffer(dbsess, fixbuf[:split])
