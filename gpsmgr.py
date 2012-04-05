@@ -16,6 +16,7 @@ import logging
 import zmq
 import settings
 from optparse import OptionParser
+import collections
 
 class Monitor(threading.Thread):
     """a thread that monitors some other activity and maintains a
@@ -296,17 +297,13 @@ class DispatchWatcher(Monitor):
 
 def sat_status(satinfo):
     def bucket(snr):
-        if snr >= 40.:
-            return 'vg'
-        elif snr >= 30.:
-            return 'g'
-        elif snr >= 20.:
-            return 'b'
-        else:
-            return 'vb'
-    buckets = map_reduce(satinfo.values(), lambda s: [(bucket(s['snr']),)], len)
+        categories = [(40., 'vg'), (30., 'g'), (20., 'b'), (0., 'vb')]
+        for thresh, label in categories:
+            if snr >= thresh:
+                return label
+    buckets = u.map_reduce(satinfo.values(), lambda s: [(bucket(s['snr']),)], len)
     buckets['ttl'] = len(satinfo)
-    return '%(ttl)d sats %(vg)dvg/%(g)dg/%(b)db/%(vb)dvb' % buckets
+    return '%(ttl)d sats %(vg)dvg/%(g)dg/%(b)db/%(vb)dvb' % collections.defaultdict(lambda: 0, buckets)
 
 class LogWatcher(Monitor):
     """monitor the tracklogger
