@@ -19,6 +19,12 @@ def wait(delay, abortfunc=lambda: False, increment=0.01):
             raise Interrupted
         time.sleep(increment)
 
+def wait_until(t):
+    try:
+        wait(1e8, lambda: time.time() >= t)
+    except Interrupted:
+        pass
+
 class Acquirer(object):
     def __init__(self, get, retry_interval, exs=Exception):
         self.get = get
@@ -61,3 +67,9 @@ def map_reduce(data, emitfunc=lambda rec: [(rec,)], reducefunc=lambda v: v):
             mapped[k].append(v)
     return dict((k, reducefunc(v)) for k, v in mapped.iteritems())
 
+def try_import(path):
+    steps = path.split('.')
+    module = '.'.join(steps[:-1])
+    attr = steps[-1]
+
+    return getattr(__import__(module, fromlist=[attr]), attr)

@@ -200,10 +200,11 @@ class DispatchLoader(threading.Thread):
     SERVER_RETRY_WAIT = 5.
     LISTENER_RETRY_WAIT = 3.
 
-    def __init__(self):
+    def __init__(self, device_policy):
         threading.Thread.__init__(self)
         
         self.up = True
+        self.device_policy = device_policy
 
         self.server_acquire = None
         self.server = None
@@ -221,7 +222,7 @@ class DispatchLoader(threading.Thread):
         self.server_acquire = u.Acquirer(gpslistener.GPSServer, self.SERVER_RETRY_WAIT, zmq.ZMQError)
         self.server = self.server_acquire.acquire(lambda: not self.up)
 
-        self.dispatcher = gpslistener.GPSDispatcher(self.server, gpslistener.BU353DevicePolicy()) # TODO make device policy a config param
+        self.dispatcher = gpslistener.GPSDispatcher(*filter(lambda e: e, [self.server, self.device_policy]))
         self.dispatcher.start()
 
         def mk_listener_acquire():
@@ -252,8 +253,9 @@ class DispatchLoader(threading.Thread):
             self.server.close()
 
 class DispatchWatcher(Monitor):
-    def __init__(self, poll_interval=0.2):
+    def __init__(self, device_policy=None, poll_interval=0.2):
         Monitor.__init__(self, poll_interval)
+        self.loader_args = (device_policy,)
         self.loader = None
 
     def get_status(self):
@@ -288,7 +290,7 @@ class DispatchWatcher(Monitor):
                 return msg
 
     def load(self):
-        self.loader = DispatchLoader()
+        self.loader = DispatchLoader(*self.loader_args)
         self.loader.start()
 
     def cleanup(self):
@@ -312,12 +314,13 @@ class LogWatcher(Monitor):
     it is persistent and reliable (reasonable assumption, because both ends of that
     socket are under our control)"""
 
-    def __init__(self, poll_interval=1.):
+    def __init__(self, tracklog_db, poll_interval=1.):
         Monitor.__init__(self, poll_interval)
+        self.tracklog_db = tracklog_db
         self.logger = None
 
     def launch(self):
-        self.logger = gpslogger.GPSLogger(settings.GPS_LOG_DB)
+        self.logger = gpslogger.GPSLogger(self.tracklog_db)
         self.logger.start()
 
     def cleanup(self):
@@ -371,11 +374,11 @@ def loader_curses(win, options):
     w_gpsd.start()
     w_gpsd.start_gpsd()
 
-    w_dispatch = DispatchWatcher()
+    w_dispatch = DispatchWatcher(u.try_import(settings.GPS_DEVICE_POLICY) if settings.GPS_DEVICE_POLICY else None)
     w_dispatch.start()
     w_dispatch.load()
 
-    w_tracklog = LogWatcher()
+    w_tracklog = LogWatcher(settings.GPS_LOG_DB)
     w_tracklog.start()
     if options.tracklog:
         w_tracklog.launch()
@@ -383,7 +386,7 @@ def loader_curses(win, options):
     watchers = [
         (w_device, 'GPS Device'),
         (w_gpsd, 'GPS Daemon'),
-        (w_dispatch, 'GPS Listener'),
+        (w_dispatch, 'GPS Dispatcher'),
         (w_tracklog, 'GPS Logger'),
     ]
 
