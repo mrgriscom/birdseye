@@ -1,5 +1,6 @@
 import time
 import collections
+from datetime import datetime
 
 EPSILON = 1.0e-9
 
@@ -73,3 +74,9 @@ def try_import(path):
     attr = steps[-1]
 
     return getattr(__import__(module, fromlist=[attr]), attr)
+
+def fdelta(td):
+    return 86400. * td.days + td.seconds + 1.0e-6 * td.microseconds
+
+def to_timestamp(dt):
+    return fdelta(dt - datetime.utcfromtimestamp(0.))

@@ -35,6 +35,9 @@ class Fix(Base):
         for field, config in fields:
             setattr(self, field, data[config.get('field') or field])
 
+    def unpack(self):
+        return dict((info.get('field', field), getattr(self, field)) for field, info in fields)
+
 for field, config in fields:
     if config.get('args', {}).get('primary_key'):
         continue
