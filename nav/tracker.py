@@ -11,6 +11,8 @@ import Queue
 import settings
 import logging
 import math
+import numpy as np
+from numpy.linalg import solve
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -76,11 +78,9 @@ class Tracker(threading.Thread):
             if self.interpolants is None:
                 return None
 
-            # evaluate polynomial interpolation at specified time t
+            # evaluate interpolation function at specified time t
             dt = u.fdelta(datetime.utcnow() - self.interpolants['t0'])
-            def pvaj_for_axis(axis):
-                return project(dt, self.interpolants[axis])
-            motion = dict(zip(('p', 'v', 'a', 'j'), zip(*(pvaj_for_axis(axis) for axis in ('x', 'y', 'z')))))
+            motion = dict(zip(('p', 'v', 'a', 'j'), zip(*(self.interpolants[axis](dt) for axis in ('x', 'y', 'z')))))
 
             # convert computed metrics (pos, velocity, acceleration, jerk) into desired position/vector formats
             for k, v in motion.iteritems():
@@ -152,10 +152,26 @@ def split_by_axis(coords):
 def interpolate(axis, data, params={}):
     # could do fancy spline stuff here, for now, just use first point
     p = data[0]['p']
-    if p is not None:
-        return (p, data[0]['v'] or 0.)
-    else:
-        None
+    if p is None:
+        return None
+
+    # 'none' amongst older points?
+
+    experimental_mode = False
+
+    def equations():
+        for i, e in enumerate(data if experimental_mode else data[:1]):
+            t = e['t']
+            yield ((1, t, t**2, t**3), e['p'])
+            if not experimental_mode:
+                yield ((0, 1, 2*t, 3*t**2), e['v'] or 0.)
+
+        yield((0,0,0,1),0.)
+        yield((0,0,1,0),0.)
+        yield((0,1,0,0),0.)
+
+    factors = list(solve(*(np.array(m[:4]) for m in zip(*equations()))))
+    return lambda dt: project(dt, factors)
 
 def project(t, factors):
     """evaluate a polynomial and its derivatives"""
