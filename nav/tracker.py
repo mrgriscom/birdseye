@@ -85,6 +85,7 @@ def timeline_stream(stream):
         yield fix
 
 def demo_stream(p0, v, interval=1.):
+    """fix stream that simulates travel in a straight line"""
     def seq(t):
         while True:
             yield t
@@ -101,9 +102,25 @@ def demo_stream(p0, v, interval=1.):
     return timeline_stream(fixstream())
 
 class TrackLogProvider(threading.Thread):
+    """helper that reads historical fixes from tracklog database and provides them
+    to tracklog_stream"""
+
+    # how much data to fetch in a single db query (in historical time)
     FETCH_WINDOW = timedelta(minutes=5)
+    # how close to real time we're allowed to query
+    PRESENT_THRESHOLD = timedelta(seconds=3)
+    # minimum allowed query interval, to prevert too-frequent queries
+    MIN_QUERY_INTERVAL = timedelta(seconds=0.5)
 
     def __init__(self, timeskew, buffer_window, dbsess, q):
+        """
+        timeskew -- function mapping real time to historical time
+        buffer_window -- how many seconds' worth (in real time) of fixes
+          to keep pre-buffered at all times
+        dbsess -- db session
+        q -- queue to provide fixes to tracklog_stream()
+        """
+
         threading.Thread.__init__(self)
         self.daemon = True
 
@@ -116,9 +133,18 @@ class TrackLogProvider(threading.Thread):
 
     def run(self):
         while True:
+            # check if the latest buffered trackpoint covers us through 'buffer window' in real time
             if self.max_fetched is None or self.max_fetched < self.timeskew(datetime.utcnow() + self.buffer_window):
-                start = self.max_fetched or self.timeskew(datetime.utcnow())
-                end = start + self.FETCH_WINDOW
+                present = datetime.utcnow() - self.PRESENT_THRESHOLD
+                t_hist = self.timeskew(datetime.utcnow())
+                start = self.max_fetched or t_hist
+                end = min(start + self.FETCH_WINDOW, present)
+
+                if t_hist >= present:
+                    logging.info('reached the present; playback terminated')
+                    break
+                if end - start < self.MIN_QUERY_INTERVAL:
+                    continue
 
                 logging.debug('querying tracklog %s to %s' % (start, end))
 
@@ -130,6 +156,14 @@ class TrackLogProvider(threading.Thread):
             time.sleep(0.01)
 
 def tracklog_stream(dbconn, start, speedup=1., buffer_window=30.):
+    """fix stream that plays back historical tracklogs
+
+    dbconn -- connector to tracklog database
+    start -- historical fix to begin streaming from (datetime)
+    speedup -- multiplier for rate of playback vs. real-time
+    buffer_window -- how much data to keep buffered (seconds)
+    """
+
     t0 = datetime.utcnow()
     def real_to_hist_time(t):
         return start + timedelta(seconds=u.fdelta(t - t0) * speedup)
@@ -143,8 +177,9 @@ def tracklog_stream(dbconn, start, speedup=1., buffer_window=30.):
     def fix_fix(fix):
         fix['orig_time'] = fix['time']
         fix['time'] = hist_to_real_time(fix['time'])
-        if fix['speed']:
-            fix['speed'] *= speedup
+        for vfield in ('speed', 'climb'):
+            if fix[vfield]:
+                fix[vfield] *= speedup
         return fix
 
     def fixstream():
@@ -155,15 +190,10 @@ def tracklog_stream(dbconn, start, speedup=1., buffer_window=30.):
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.DEBUG)
 
-  tracker = tracker() #((0.0, 0.0), (100000., -110.)))
-  tracker.start()
+    fixstream = tracklog_stream('postgresql://geoloc', datetime.utcnow() - timedelta(seconds=40.), 1.)
 
-  try:
-    while True:
-      print tracker.get_loc()
-      time.sleep(0.1)
-  except KeyboardInterrupt:
-    pass
+    for f in fixstream:
+        print f
 
-  tracker.terminate()
