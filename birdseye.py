@@ -5,7 +5,7 @@ from OpenGL.GLU import *
 import Image
 import time
 import math
-from nav.tracker import Tracker, tracklog_stream
+from nav.tracker import Tracker, live_stream, dead_reckoning_stream, tracklog_stream
 from mapcache import maptile
 from nav import texture
 from util import geodesy
@@ -16,6 +16,7 @@ from optparse import OptionParser
 import os
 import logging
 import settings
+from gps.gpslistener import GPSSubscription
 
 SCREEN_WIDTH = 1920
 SCREEN_HEIGHT = 1080
@@ -601,6 +602,7 @@ def parse_args (args):
   parser.add_option('-v', '--view', dest='view', default='map')
   parser.add_option('--dp', dest='demopos')
   parser.add_option('--dv', dest='demovel', default='0,0')
+  parser.add_option('--hist', dest='hist')
 
   (options, args) = parser.parse_args()
 
@@ -611,14 +613,26 @@ def parse_args (args):
     print 'unrecognized view type'
     sys.exit()
 
-  demo = False
-  if options.demopos != None:
-    demo = True
+  if options.hist:
+    x = options.hist.split(':')
+    start = datetime.strptime(x[0], '%Y%m%d%H%M%S')
+    try:
+      speed = float(x[1])
+    except IndexError:
+      speed = 1.
+
+    fixstream = tracklog_stream(settings.GPS_LOG_DB, start, speed)
+  elif options.demopos:
     demo_p = parse_ll(options.demopos)
     if demo_p == None:
       print 'invalid position'
       sys.exit()
     demo_v = parse_v(options.demovel)
+
+    fixstream = dead_reckoning_stream(demo_p, demo_v)
+  else:
+    
+    fixstream = live_stream(GPSSubscription())
 
   if len(args) > 0:
     destpos = parse_ll(args[0])
@@ -626,13 +640,10 @@ def parse_args (args):
       print 'invalid position'
       sys.exit()
 
-  if not demo:
-    gps = Tracker(tracklog_stream(settings.GPS_LOG_DB, datetime(2009, 6, 6, 17), 20))
-  else:
-    gps = tracker((demo_p, demo_v))
+  gps = Tracker(fixstream)
   gps.start()
 
-  print zoom, view, destpos, ('demo', demo_p, demo_v) if demo else 'gps'
+  print zoom, view, destpos
 
 
 

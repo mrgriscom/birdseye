@@ -196,7 +196,7 @@ def timeline_stream(stream):
         fix['systime'] = datetime.utcnow()
         yield fix
 
-def demo_stream(p0, v, interval=1.):
+def dead_reckoning_stream(p0, v, interval=1.):
     """fix stream that simulates travel in a straight line"""
     def seq(t):
         while True:
