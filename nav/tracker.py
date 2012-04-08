@@ -133,10 +133,10 @@ def to_vect((x, y, z), mode):
         return (x, y, z)
     elif mode == 'raz':
         r = geodesy.vlen([x, y])
-        return (r, math.degrees(math.atan2(x, y)) if r > 0. else None, z)
+        return (r, math.degrees(math.atan2(x, y)) if r > 0. else 0., z)
     elif mode == 'rai':
         r = geodesy.vlen([x, y, z])
-        ll = geodesy.ecefu_to_ll(geodesy.vnorm([y, x, z])) if r > 0. else (None, None)
+        ll = geodesy.ecefu_to_ll(geodesy.vnorm([y, x, z])) if r > 0. else (0., 0.)
         return (r, ll[1], ll[0])
 
 def split_by_axis(coords):
