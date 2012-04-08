@@ -1,6 +1,7 @@
 import time
 import collections
 from datetime import datetime
+import operator
 
 EPSILON = 1.0e-9
 
@@ -80,3 +81,13 @@ def fdelta(td):
 
 def to_timestamp(dt):
     return fdelta(dt - datetime.utcfromtimestamp(0.))
+
+def fact_div(a, b):
+    """return a! / b!"""
+    return product(xrange(b + 1, a + 1)) if a >= b else 1. / fact_div(b, a)
+
+def product(n):
+    """return the product of a set of numbers
+
+    n -- an iterable of numbers"""
+    return reduce(operator.mul, n, 1)

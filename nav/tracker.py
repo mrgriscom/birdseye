@@ -10,65 +10,163 @@ import util.util as u
 import Queue
 import settings
 import logging
+import math
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 class Tracker(threading.Thread):
-    def __init__(self, fixstream):
+    """listen to a stream of position fixes and provide a smooth, interpolated
+    trackpath"""
+
+    def __init__(self, fixstream, vector_mode='raz'):
         threading.Thread.__init__(self)
         self.daemon = True
         self.lock = threading.Lock()
 
         self.fixstream = fixstream
+        self.vector_mode = vector_mode
 
-        self.p = None
-        self.v = None
-        self.t = None
+        self.fixbuffer = []
+        self.interpolants = None
 
-    def run (self):
+    def run(self):
         for fix in self.fixstream:
-            p = (data['lat'], data['lon'], data['alt'])
-            v = (data['speed'], data['heading'], data['climb'])
-            self.update_loc
+            if self.filter_fix(fix):
+                self.update(fix)
 
-        while self.up:
-            fix = self.fixstream.next()
-            self.update_loc(fix)
+    def filter_fix(self, fix):
+        """determine if fix is of sufficient quality to use"""
+        # could check position error against a threshold, etc.
+        # for now, accept all
+        return True
 
-    def update_loc(self):
+    def update(self, fix):
+        """update the current track parameters based on new fix"""
+
+        # note: the timestamp of incoming fixes is ignored; they are
+        # considered to be effective immediately. this is no concept of
+        # a new fix being out-of-date by some delay in processing.
+        # however, timestamps are considered to computing the relative
+        # time difference among recent fixes
+
         with self.lock:
-            self.p = p
-            self.v = v
-            self.t = time.time()
+            self.add_fix(fix)
+            self.interpolate()
+
+    def add_fix(self, fix):
+        """update the set of fixes to be used for track interpolation"""
+        self.fixbuffer.insert(0, fix)
+        # keep most-recent 4 fixes
+        self.fixbuffer = self.fixbuffer[:4]
+
+    def transform(self):
+        """convert buffered fixes to xyz coordinate system"""
+        return [to_xyzt(f, self.fixbuffer[0]) for f in self.fixbuffer]
+
+    def interpolate(self):
+        """compute and update interpolation factors"""
+        coords = self.transform()
+        self.interpolants = dict((axis, interpolate(axis, data)) for axis, data in split_by_axis(coords))
+        self.interpolants['t0'] = self.fixbuffer[0]['time']
 
     def get_loc(self):
+        """compute instantaneous location based on current track parameters"""
         with self.lock:
-            if not self.p:
+            if self.interpolants is None:
                 return None
-            else:
-                dt = time.time() - self.t
-                p2 = geodesy.plot(self.p, self.v[1] or 0., (self.v[0] or 0.) * dt)
 
-                if self.p[3] is not None:
-                    alt = self.p[3] + dt * (v[3] or 0.)
+            # evaluate polynomial interpolation at specified time t
+            dt = u.fdelta(datetime.utcnow() - self.interpolants['t0'])
+            def pvaj_for_axis(axis):
+                return project(dt, self.interpolants[axis])
+            motion = dict(zip(('p', 'v', 'a', 'j'), zip(*(pvaj_for_axis(axis) for axis in ('x', 'y', 'z')))))
+
+            # convert computed metrics (pos, velocity, acceleration, jerk) into desired position/vector formats
+            for k, v in motion.iteritems():
+                if k == 'p':
+                    f = lambda k: to_lla(k, self.fixbuffer[0])
                 else:
-                    alt = None
+                    f = lambda k: to_vect(k, self.vector_mode)
+                motion[k] = f(motion[k])
 
-                p = (p2[0], p2[1], alt)
+            return motion
 
-                # v needs to be adjusted for curvature, technically
-                return (p, self.v, dt)
-
-# assume all received fixes are received in real-time??
-
+def to_xyzt(fix, base):
+    """map position fixes to a xyz-based coordinate system centered on 'base'
+    we use the azimuthal equidistance projection-- the error should be
+    indistinguishable on the scales we're working with
     """
-    bearing = geodesy.bearing(p2, self.p)
-      if bearing != None:
-        if abs(geodesy.anglenorm(geodesy.bearing(self.p, p)) - v[1]) < 1.0e-3:
-          bearing += 180.
-          v = (v[0], geodesy.anglenorm(bearing))
-    """
+
+    def p(f):
+        return (f['lat'], f['lon'])
+    def xy(mag, theta):
+        return (mag * func(math.radians(theta)) for func in (math.sin, math.cos))
+
+    t = u.fdelta(fix['time'] - base['time'])
+
+    dist = geodesy.distance(p(base), p(fix))
+    bearing = (geodesy.bearing(p(base), p(fix)) or 0.)
+    rev_bearing = (geodesy.bearing(p(fix), p(base)) or 180.)
+
+    x, y = xy(dist, bearing)
+    z = fix['alt']
+
+    if fix['speed'] is not None:
+        heading = (fix['heading'] - rev_bearing) + (bearing + 180.)
+        vx, vy = xy(fix['speed'], heading)
+    else:
+        vx = vy = None
+    vz = fix['climb']
+
+    return (t, (x, y, z), (vx, vy, vz))
+
+def to_lla((x, y, z), base):
+    """convert the xyz-based position back to lat-lon-alt"""
+    dist = geodesy.vlen([x, y])
+    bearing = math.atan2(x, y)
+    ll = geodesy.plot((base['lat'], base['lon']), bearing, dist)[0]
+    return (ll[0], ll[1], z)
+
+def to_vect((x, y, z), mode):
+    if mode == 'xyz':
+        return (x, y, z)
+    elif mode == 'raz':
+        r = geodesy.vlen([x, y])
+        return (r, math.degrees(math.atan2(x, y)) if r > 0. else None, z)
+    elif mode == 'rai':
+        r = geodesy.vlen([x, y, z])
+        ll = geodesy.ecefu_to_ll(geodesy.vnorm([y, x, z])) if r > 0. else (None, None)
+        return (r, ll[1], ll[0])
+
+def split_by_axis(coords):
+    """split transformed coordinates into groups by axis"""
+    def to_xyz(c):
+        t, p, v = c
+        return [dict(zip(('t', 'p', 'v'), axis)) for axis in zip([t]*3, p, v)]
+
+    by_axis = zip(*(to_xyz(c) for c in coords))
+    return zip(('x', 'y', 'z'), by_axis)
+
+def interpolate(axis, data, params={}):
+    # could do fancy spline stuff here, for now, just use first point
+    return (data[0]['p'], data[0]['v'] or 0.)
+
+def project(t, factors):
+    """evaluate a polynomial and its derivatives"""
+    def polynomial(derivative):
+        def weight(i):
+            return u.fact_div(i + derivative, i)
+        return sum(weight(i) * k * t**i for i, k in enumerate(factors[derivative:]))
+    return [polynomial(i) for i in range(len(factors))]
+
+
+
+
+
+
+
+
 
 def live_stream(gps_sub):
     """fix stream from a live gps"""
@@ -102,7 +200,7 @@ def demo_stream(p0, v, interval=1.):
     return timeline_stream(fixstream())
 
 class TrackLogProvider(threading.Thread):
-    """helper that reads historical fixes from tracklog database and provides them
+    """helper that buffers historical fixes from tracklog database and provides them
     to tracklog_stream"""
 
     # how much data to fetch in a single db query (in historical time)
@@ -192,7 +290,7 @@ def tracklog_stream(dbconn, start, speedup=1., buffer_window=30.):
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG)
 
-    fixstream = tracklog_stream('postgresql://geoloc', datetime.utcnow() - timedelta(seconds=40.), 1.)
+    fixstream = tracklog_stream('postgresql://geoloc', datetime.utcnow() - timedelta(seconds=31.), 1.)
 
     for f in fixstream:
         print f
