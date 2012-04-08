@@ -5,7 +5,7 @@ from Polygon import *
 import psycopg2
 from datetime import datetime
 from mapcache import mapdownloader
-import config
+import settings
 
 def error_out (msg):
   print msg
@@ -124,7 +124,7 @@ def check_unsupported (args):
 
 def db_validate (args):
   try:
-    conn = psycopg2.connect(database=config.db)
+    conn = psycopg2.connect(database=settings.TILE_DB.split('/')[-1])
     curs = conn.cursor()
   except:
     error_out('can\'t connect to database')

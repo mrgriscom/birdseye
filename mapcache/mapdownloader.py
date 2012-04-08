@@ -12,7 +12,7 @@ import psycopg2
 from Polygon import *
 import maptile
 from downloadmanager import DownloadManager
-import config
+import settings
 
 import sys #debug
 
@@ -31,7 +31,7 @@ def tile_url ((zoom, x, y), type):
 
 def dbconn ():
   try:
-    return psycopg2.connect(database=config.db)
+    return psycopg2.connect(database=settings.TILE_DB.split('/')[-1])
   except:
     print 'can\'t connect to database'
     sys.exit()
@@ -119,7 +119,7 @@ def random_walk (tiles):
       yield t
 
 def save_tile (data, digest):
-  path = config.tile_dir
+  path = settings.TILE_ROOT
   if path[-1] != '/':
     path += '/'
 

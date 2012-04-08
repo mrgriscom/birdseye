@@ -5,7 +5,7 @@ from OpenGL.GLU import *
 import Image
 import time
 import math
-from nav.tracker import tracker
+from nav.tracker import Tracker, tracklog_stream
 from mapcache import maptile
 from nav import texture
 from util import geodesy
@@ -15,7 +15,10 @@ from datetime import datetime
 from optparse import OptionParser
 import os
 import logging
-import config
+import settings
+
+SCREEN_WIDTH = 1920
+SCREEN_HEIGHT = 1080
 
 ESCAPE = '\x1b'
 
@@ -25,7 +28,7 @@ zoom = None
 view = 'map'
 curview = None
 
-texwidth = 6
+texwidth = 10
 texheight = 6
 
 maptexid = None
@@ -40,8 +43,8 @@ destpos = None
 
 scales = None
 
-units = 'metric'
-#units = 'imperial'
+#units = 'metric'
+units = 'imperial'
 
 def InitGL(Width, Height):
   LoadStaticTextures()
@@ -67,7 +70,7 @@ def ReSizeGLScene(Width, Height):
   SetProjection(Width, Height)
 
 def SetProjection (Width, Height):
-  (xmin, xmax, ymin, ymax) = [0.5 / 256. * d for d in [-1024, 1024, 600, -600]]
+  (xmin, xmax, ymin, ymax) = [0.5 / 256. * d for d in [-SCREEN_WIDTH, SCREEN_WIDTH, SCREEN_HEIGHT, -SCREEN_HEIGHT]]
 
   glViewport(0, 0, Width, Height)
   glMatrixMode(GL_PROJECTION)
@@ -127,7 +130,7 @@ def LoadMapTexture (view, zoom, tile):
     print maptexid
 
   xmin = tile[0] - texwidth / 2
-  ymin = tile[1] - texwidth / 2
+  ymin = tile[1] - texheight / 2
 
   tex_image = texture.get_texture_image(view, zoom, xmin, ymin, texwidth, texheight)
   LoadTexture(maptexid, tex_image)
@@ -136,7 +139,10 @@ def LoadMapTexture (view, zoom, tile):
 
 def DrawGLScene():
  try:
-  (pos, v, age) = gps.get_loc()
+  k = gps.get_loc()
+  pos = k['p'][:2]
+  v = k['v'][:2]
+  age = k['dt']
 
   #will differ in browse mode
   pos_center = pos
@@ -295,7 +301,7 @@ def DrawGLScene():
   glBindTexture(GL_TEXTURE_2D, texttexid)
 
   glPushMatrix()
-  glTranslatef(1.35, -1.17, 0)
+  glTranslatef(3.10, -2.11, 0)
 
   glPushMatrix()
   glScalef(.5, .5, 1.)
@@ -323,7 +329,7 @@ def DrawGLScene():
     glBindTexture(GL_TEXTURE_2D, texttexid)
 
     glPushMatrix()
-    glTranslatef(-1.99, -1.17, 0)
+    glTranslatef(-3.74, -2.11, 0)
 
     writeText(diststr)
 
@@ -351,7 +357,7 @@ def DrawGLScene():
 
 
 
-    writeText(etastr)
+#    writeText(etastr)
 
     glPopMatrix()
 
@@ -385,7 +391,7 @@ def DrawGLScene():
   lab = scale[1]
 
   glPushMatrix()
-  glTranslatef(1.95, 287/256., 0)  
+  glTranslatef(3.70, (287+240)/256., 0)  
 
   glDisable(GL_TEXTURE_2D)
   glLineWidth(6)
@@ -415,7 +421,7 @@ def DrawGLScene():
   slon = u'%09.5f\xb0' % abs(pos_center[1])
 
   glPushMatrix()
-  glTranslatef(-1.99, 1.015, 0)
+  glTranslatef(-3.74, 1.955, 0)
   glScalef(.7, .7, 0)
 
   writeText('N' if pos_center[0] >= 0 else 'S')
@@ -508,7 +514,7 @@ def main():
 
   glutInit([''])
   glutInitDisplayMode(GLUT_RGBA | GLUT_DOUBLE)
-  glutInitWindowSize(1024, 600)
+  glutInitWindowSize(SCREEN_WIDTH, SCREEN_HEIGHT)
   glutInitWindowPosition(0, 0)
   window = glutCreateWindow(windowname)
 
@@ -520,7 +526,7 @@ def main():
   glutReshapeFunc(ReSizeGLScene)
   glutKeyboardFunc(keyPressed)
 
-  InitGL(1024, 600)
+  InitGL(SCREEN_WIDTH, SCREEN_HEIGHT)
 
   glutMainLoop()
 
@@ -621,7 +627,7 @@ def parse_args (args):
       sys.exit()
 
   if not demo:
-    gps = tracker()
+    gps = Tracker(tracklog_stream(settings.GPS_LOG_DB, datetime(2009, 6, 6, 17), 20))
   else:
     gps = tracker((demo_p, demo_v))
   gps.start()
@@ -640,7 +646,7 @@ if __name__ == "__main__":
   parse_args(sys.argv)
 
   print 'waiting for gps lock...'
-  while gps.get_loc()[0] == None:
+  while gps.get_loc() == None:
     time.sleep(0.1)
   print 'lock acquired'
 

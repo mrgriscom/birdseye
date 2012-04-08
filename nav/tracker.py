@@ -90,6 +90,7 @@ class Tracker(threading.Thread):
                     f = lambda k: to_vect(k, self.vector_mode)
                 motion[k] = f(motion[k])
 
+            motion['dt'] = dt
             return motion
 
 def to_xyzt(fix, base):

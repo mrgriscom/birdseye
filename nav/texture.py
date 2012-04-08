@@ -2,7 +2,7 @@ from Image import *
 import os
 import ImageEnhance
 from mapcache import mapdownloader
-import config
+import settings
 import sys
 
 blocksize = 256
@@ -74,7 +74,7 @@ def tile_file (mode, zoom, x, y):
   else:
     return None
 
-  path = config.tile_dir
+  path = settings.TILE_ROOT
   if path[-1] != '/':
     path += '/'
 
