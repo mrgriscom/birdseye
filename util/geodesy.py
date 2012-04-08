@@ -120,7 +120,10 @@ def bearing(src, dst):
 
 def _bearing(vp, vdir):
     (vnorth, veast) = orientate(vp)
-    return math.degrees(math.atan2(dotp(vdir, veast), dotp(vdir, vnorth)))
+    return _xy_to_bearing(dotp(vdir, veast), dotp(vdir, vnorth))
+
+def _xy_to_bearing(x, y):
+    return math.degrees(math.atan2(x, y))
 
 #return the coordinates of the position 'distance' meters away from 'p', in direction 'bearing'
 #as well as new bearing at the target point 

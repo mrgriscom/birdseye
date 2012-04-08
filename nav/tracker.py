@@ -125,7 +125,7 @@ def to_xyzt(fix, base):
 def to_lla((x, y, z), base):
     """convert the xyz-based position back to lat-lon-alt"""
     dist = geodesy.vlen([x, y])
-    bearing = math.atan2(x, y)
+    bearing = geodesy._xy_to_bearing(x, y)
     ll = geodesy.plot((base['lat'], base['lon']), bearing, dist)[0]
     return (ll[0], ll[1], z)
 
@@ -134,7 +134,7 @@ def to_vect((x, y, z), mode):
         return (x, y, z)
     elif mode == 'raz':
         r = geodesy.vlen([x, y])
-        return (r, math.degrees(math.atan2(x, y)) if r > 0. else 0., z)
+        return (r, geodesy._xy_to_bearing(x, y) if r > 0. else 0., z)
     elif mode == 'rai':
         r = geodesy.vlen([x, y, z])
         ll = geodesy.ecefu_to_ll(geodesy.vnorm([y, x, z])) if r > 0. else (0., 0.)
