@@ -150,7 +150,11 @@ def split_by_axis(coords):
 
 def interpolate(axis, data, params={}):
     # could do fancy spline stuff here, for now, just use first point
-    return (data[0]['p'], data[0]['v'] or 0.)
+    p = data[0]['p']
+    if p is not None:
+        return (p, data[0]['v'] or 0.)
+    else:
+        None
 
 def project(t, factors):
     """evaluate a polynomial and its derivatives"""
@@ -158,7 +162,16 @@ def project(t, factors):
         def weight(i):
             return u.fact_div(i + derivative, i)
         return sum(weight(i) * k * t**i for i, k in enumerate(factors[derivative:]))
-    return [polynomial(i) for i in range(len(factors))]
+
+    if factors:
+        return [polynomial(i) for i in range(len(factors))]
+    else:
+        # return None for all derivatives -- we don't know how many, so use
+        # infinite generator
+        def _():
+            while True:
+                yield None
+        return _()
 
 
 
