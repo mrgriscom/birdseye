@@ -141,3 +141,13 @@ def commit_buffer(dbsess, fixbuf):
             split = len(fixbuf) / 2
             commit_buffer(dbsess, fixbuf[:split])
             commit_buffer(dbsess, fixbuf[split:])
+
+
+
+def query_tracklog(dbsess, start, end, inclusive=False):
+    q = dbsess.query(Fix).filter(Fix.gps_time >= start)
+    if end:
+        q = q.filter(Fix.gps_time <= end if inclusive else Fix.gps_time < end)
+    for f in q.order_by(Fix.gps_time):
+        yield f.unpack()
+

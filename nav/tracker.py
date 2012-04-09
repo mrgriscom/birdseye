@@ -3,7 +3,7 @@ import os
 import time
 from util import geodesy
 from gps import gpslistener
-from gps.gpslogger import Fix
+from gps.gpslogger import query_tracklog
 import sys
 from datetime import datetime, timedelta
 import util.util as u
@@ -276,8 +276,7 @@ class TrackLogProvider(threading.Thread):
 
                 logging.debug('querying tracklog %s to %s' % (start, end))
 
-                fixes = [f.unpack() for f in self.dbsess.query(Fix).filter(Fix.gps_time >= start).filter(Fix.gps_time < end)]
-                for f in sorted(fixes, key=lambda f: f['time']):
+                for f in query_tracklog(self.dbsess, start, end):
                     self.q.put(f)
 
                 self.max_fetched = end

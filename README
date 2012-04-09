@@ -1,0 +1,19 @@
+requirements
+
+gpsd
+
+
+python:
+
+zero-mq >= 2.1
+sqlalchemy >= 0.7
+
+numpy
+PIL
+pyopengl
+polygon
+ncurses
+yaml
+lxml
+
+i should fill this out with stuff
