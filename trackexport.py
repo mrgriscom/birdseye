@@ -1,10 +1,12 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from optparse import OptionParser
 from contextlib import contextmanager
 from gps.gpslogger import query_tracklog
 import logging
 import sys
 import settings
+import util.util as u
+import itertools
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -103,9 +105,49 @@ class GPX(XML):
 
         return E.trkpt(*children, **attr)
 
-def process(points, options):
-    pass
+def split_time_gap(points, gap_threshold):
+    seg = []
+    prev_time = None
+    for p in points:
+        if prev_time is not None and p['time'] - prev_time > gap_threshold:
+            yield seg
+            seg = []
+        seg.append(p)
+        prev_time = p['time']
+    if seg:
+        yield seg
 
+def split_max_points(seg, max_len):
+    subseg = []
+    for p in seg:
+        subseg.append(p)
+        if len(subseg) == max_len:
+            yield subseg
+            subseg = [p]
+    if len(subseg) > 1 or len(seg) == 1:
+        yield subseg
+
+
+def process(points, options):
+    # straight max dist
+    # straight max time
+    # straight tolerance
+    # clustering removal
+
+
+    # stoppage clustering
+
+    # path gap breaking
+
+    # path straightening
+
+    # max trkpoint splitting
+
+    logging.info('splitting track by time gaps')
+    segs = split_time_gap(points, timedelta(seconds=options.gap))
+
+    logging.info('splitting track by max length')
+    return list(itertools.chain(*(split_max_points(seg, options.max) for seg in segs)))
 
 
 @contextmanager
@@ -133,34 +175,36 @@ if __name__ == "__main__":
                       help='output format (gpx, kml, etc.)')
     parser.add_option('--db', dest='db', default=settings.GPS_LOG_DB,
                       help='tracklog database connector')
+    parser.add_option('-g', '--gap', dest='gap', type='int', default=3,
+                      help='maximum gap between fixes before starting new track segment (seconds)')
+    parser.add_option('-s', '--simplify', dest='simplify', action='store_true',
+                      help='simplify trackpath by removing redundant points')
+    parser.add_option('--no-simplify', dest='simplify', action='store_false')
+    parser.add_option('--bc', '--breadcrumbs', dest='bc', default='5,60',
+                      help='leave breadcrumb markers (comma-separated list of intervals (minutes)) (kml only)')
+    parser.add_option('--no-bc', dest='nobc', action='store_true',
+                      help='disable breadcrumb markers')
+    parser.add_option('--stops', dest='stops', default='20:40',
+                      help='leave stoppage markers, where position does not move more than X meters for at least Y seconds; [X]:[Y] (kml only)')
+    parser.add_option('--no-stops', dest='nostops', action='store_true')
     parser.add_option('--style', dest='style', default='fff:1',
                       help='styling (kml only); [color]:[line width]')
     parser.add_option('-a', dest='alt', action='store_true', default=False,
                       help='use true altitude (kml only)')
-    parser.add_option('-s', '--simplify', dest='simplify', action='store_true', default=False,
-                      help='simplify trackpath by removing redundant points')
-
-    # segment gap threshold
-    # max pts per segment
-    # straight max dist
-    # straight max time
-    # straight tolerance
-    # clustering removal
-    # include alt
-
-    # stoppage markers
-    # breadcrumb markers
-
-    # styling
-
+    parser.add_option('--max', dest='max', type='int', default=5000,
+                      help='max points per track segment')
 
     (options, args) = parser.parse_args()
+
+    if options.simplify is None:
+        options.simplify = (options.of == 'kml')
+    options.bc = [float(k.strip()) for k in options.bc.split(',')] if not options.nobc else []
+    options.stops = dict(zip(('dist', 'time'), (float(k) for k in options.stops.split(':')))) if not options.nostops else None
 
     try:
         start = parse_timestamp(args[0])
     except IndexError:
         raise Exception('start time required')
-
     try:
         end = parse_timestamp(args[1])
     except IndexError:
@@ -171,84 +215,28 @@ if __name__ == "__main__":
         points = list(query_tracklog(sess, start, end))
     logging.debug('%d points fetched' % len(points))
 
-    process(points, options)
+    segments = process(points, options)
 
     serializer = {
         'gpx': GPX(),
         'kml': KML(true_alt=options.alt, styling=parse_style(options.style)),
     }[options.of]
 
-    serializer.write(sys.stdout, [points])
+    serializer.write(sys.stdout, segments)
         
 
 
 """
-
-import sys
-from datetime import datetime, timedelta
-import psycopg2
-import geodesy
-
-DB = 'geoloc'
-usealt = False
-
-gap_threshold = 3 #s
-max_pts_per_segment = 5000
 
 straight_length_max = 300 #m
 straight_time_max = 10 #s
 straight_threshold = 1. #deg
 #straight_tolerance = 10  #m
 
-patches = {
-
-}
-
-def get_points (stdt=None, endt=None):
-  conn = psycopg2.connect(database=DB)
-  curs = conn.cursor()
-  curs.execute('select gps_time, latitude, longitude, altitude from gps_log where gps_time between %(start)s and %(end)s order by gps_time;', dict(start=stdt, end=enddt))
-
-  points = []
-  row = curs.fetchone()
-  while row != None:
-    (timestamp, lat, lon, alt) = row
-    points.append((timestamp, lat, lon, alt))
-    row = curs.fetchone()
-  curs.close()
-  conn.close()
-
-  #apply patches
-
-  return points
-
-def segmentize(points):
-  seg = []
-  lasttime = None
-  for p in points:
-    if lasttime != None and fdelta(p[0] - lasttime) > gap_threshold:
-      yield seg
-      seg = []
-    seg.append(p)
-    lasttime = p[0]
-  if len(seg) > 0:
-    yield seg
-
-def sub_segmentize(segment):
-  subseg = []
-  for p in segment:
-    subseg.append(p)
-    if len(subseg) == max_pts_per_segment:
-      yield subseg
-      subseg = [p]
-  if len(subseg) > 0:
-    yield subseg
 
 def get_segments(points):
   return [process_segment(seg) for seg in segmentize(points)]
 
-def fdelta (td):
-  return 86400. * td.days + td.seconds + 1.0e-6 * td.microseconds
 
 def dist (p0, p1):
   return geodesy.distance((p0[1], p0[2]), (p1[1], p1[2]))
@@ -478,11 +466,7 @@ def breadcrumbs(points, interval):
   return bcs
 
 if __name__ == "__main__":
-  stdt = datetime.strptime(sys.argv[1], '%Y%m%d%H%M')
-  enddt = datetime.strptime(sys.argv[2], '%Y%m%d%H%M')
-  color = sys.argv[3] if len(sys.argv) > 3 else 'ff0000'
-
-  points = get_points(stdt, enddt)
+  points = ...
 
   bc1 = breadcrumbs(points, 300)
   bc2 = breadcrumbs(points, 3600)
