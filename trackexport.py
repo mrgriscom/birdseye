@@ -32,6 +32,7 @@ class KML(XML):
     def __init__(self, true_alt=False, styling=None):
         super(KML, self).__init__()
         self.true_alt = true_alt
+        self.styling = styling
 
     def serialize(self, segs):
         E = self.E
@@ -41,13 +42,22 @@ class KML(XML):
         
     def segment(self, points):
         E = self.E
-        return E.Placemark(
-            E.LineString(
-                E.tessellate(str(1)),
-                E.altitudeMode('absolute' if self.true_alt else 'clampToGround'),
-                E.coordinates('\n%s\n' % '\n'.join(self.point(p) for p in points))
-            )
-        )
+
+        children = []
+        if self.styling:
+            children.append(E.Style(
+                E.LineStyle(
+                    E.color('ff%s%s%s' % tuple(self.styling['color'][k:k+2] for k in range(4, -2, -2))),
+                    E.width(str(self.styling['width']))
+                )
+            ))
+        children.append(E.LineString(
+            E.tessellate(str(1)),
+            E.altitudeMode('absolute' if self.true_alt else 'clampToGround'),
+            E.coordinates('\n%s\n' % '\n'.join(self.point(p) for p in points))
+        ))
+
+        return E.Placemark(*children)
 
     def point(self, p):
         fmt = '%(lon)f,%(lat)f'
@@ -93,6 +103,9 @@ class GPX(XML):
 
         return E.trkpt(*children, **attr)
 
+def process(points, options):
+    pass
+
 
 
 @contextmanager
@@ -106,6 +119,11 @@ def parse_timestamp(s):
     s = (s + '000000')[:14]
     return datetime.strptime(s, '%Y%m%d%H%M%S')
 
+def parse_style(sty):
+    color, width = sty.split(':')
+    if len(color) == 3:
+        color = ''.join(''.join(x) for x in zip(color, color))
+    return {'color': color, 'width': int(width)}
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG, stream=sys.stderr)
@@ -115,6 +133,12 @@ if __name__ == "__main__":
                       help='output format (gpx, kml, etc.)')
     parser.add_option('--db', dest='db', default=settings.GPS_LOG_DB,
                       help='tracklog database connector')
+    parser.add_option('--style', dest='style', default='fff:1',
+                      help='styling (kml only); [color]:[line width]')
+    parser.add_option('-a', dest='alt', action='store_true', default=False,
+                      help='use true altitude (kml only)')
+    parser.add_option('-s', '--simplify', dest='simplify', action='store_true', default=False,
+                      help='simplify trackpath by removing redundant points')
 
     # segment gap threshold
     # max pts per segment
@@ -145,12 +169,13 @@ if __name__ == "__main__":
     logging.info('exporting %s to %s' % (start, end or '--'))
     with dbsess(options.db) as sess:
         points = list(query_tracklog(sess, start, end))
-
     logging.debug('%d points fetched' % len(points))
+
+    process(points, options)
 
     serializer = {
         'gpx': GPX(),
-        'kml': KML(),
+        'kml': KML(true_alt=options.alt, styling=parse_style(options.style)),
     }[options.of]
 
     serializer.write(sys.stdout, [points])
