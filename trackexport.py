@@ -17,8 +17,10 @@ def _E(default_ns, **kwargs):
     return ElementMaker(namespace=default_ns, nsmap=kwargs)
 
 class XML(object):
+    EXT_NS = {}
+
     def __init__(self):
-        self.E = _E(self.NAMESPACE)
+        self.E = _E(self.NAMESPACE, **self.EXT_NS)
 
     def write(self, f, segs):
         root = self.serialize(segs)
@@ -55,6 +57,9 @@ class KML(XML):
 
 class GPX(XML):
     NAMESPACE = 'http://www.topografix.com/GPX/1/1'
+    EXT_NS = {
+        'be': 'http://mrgris.com/schema/birdseye/gpxext/1.0',
+    }
 
     def serialize(self, segs):
         E = self.E
@@ -68,6 +73,7 @@ class GPX(XML):
 
     def point(self, p):
         E = self.E
+        EXT = lambda tag, *args, **kwargs: E('{%s}%s' % (self.EXT_NS['be'], tag), *args, **kwargs)
 
         attr = dict((k, str(p[k])) for k in ('lat', 'lon'))
         children = [
@@ -75,6 +81,15 @@ class GPX(XML):
         ]
         if p['alt'] is not None:
             children.append(E.ele(str(p['alt'])))
+
+        ext_fields = ['speed', 'heading', 'climb', 'h_error', 'v_error']
+        def ext_node(field):
+            val = p[field]
+            if val is not None:
+                return EXT(field, str(val))
+        ext_nodes = filter(lambda e: e is not None, (ext_node(f) for f in ext_fields))
+        if ext_nodes:
+            children.append(E.extensions(*ext_nodes))
 
         return E.trkpt(*children, **attr)
 
@@ -96,7 +111,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG, stream=sys.stderr)
 
     parser = OptionParser(usage='usage: %prog [options] start [end]')
-    parser.add_option('-f', '--format', dest='of', default='gpx',
+    parser.add_option('-f', '--format', dest='of', default='kml',
                       help='output format (gpx, kml, etc.)')
     parser.add_option('--db', dest='db', default=settings.GPS_LOG_DB,
                       help='tracklog database connector')
@@ -127,7 +142,7 @@ if __name__ == "__main__":
     except IndexError:
         end = None
 
-    logging.debug('exporting %s to %s' % (start, end or '--'))
+    logging.info('exporting %s to %s' % (start, end or '--'))
     with dbsess(options.db) as sess:
         points = list(query_tracklog(sess, start, end))
 
@@ -154,13 +169,6 @@ usealt = False
 
 gap_threshold = 3 #s
 max_pts_per_segment = 5000
-
-stopped_threshold = [
-  (0, 2, 60),
-  (30, 5, 30),
-  (300, 15, 120),
-  (3600, 50, 600)
-]
 
 straight_length_max = 300 #m
 straight_time_max = 10 #s
@@ -227,6 +235,13 @@ def process_segment(seg):
   seg = process_clustering(seg)
   seg = process_straights(seg)
   return seg
+
+stopped_threshold = [
+  (0, 2, 60),
+  (30, 5, 30),
+  (300, 15, 120),
+  (3600, 50, 600)
+]
 
 def cluster_bracket (tdiff):
   bracket = 0
