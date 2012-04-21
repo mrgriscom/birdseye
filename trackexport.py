@@ -7,6 +7,8 @@ import sys
 import settings
 import util.util as u
 import itertools
+from bisect import bisect_left, bisect_right
+from util import geodesy
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -19,6 +21,8 @@ def _E(default_ns, **kwargs):
     return ElementMaker(namespace=default_ns, nsmap=kwargs)
 
 class XML(object):
+    """abstract parent for XML-format serializers"""
+
     EXT_NS = {}
 
     def __init__(self):
@@ -29,6 +33,8 @@ class XML(object):
         etree.ElementTree(element=root).write(f, encoding='utf-8', pretty_print=True)
 
 class KML(XML):
+    """serializer for KML format"""
+
     NAMESPACE = 'http://earth.google.com/kml/2.1'
 
     def __init__(self, true_alt=False, styling=None):
@@ -68,6 +74,8 @@ class KML(XML):
         return fmt % p
 
 class GPX(XML):
+    """serializer for GPX format"""
+
     NAMESPACE = 'http://www.topografix.com/GPX/1/1'
     EXT_NS = {
         'be': 'http://mrgris.com/schema/birdseye/gpxext/1.0',
@@ -106,10 +114,12 @@ class GPX(XML):
         return E.trkpt(*children, **attr)
 
 def split_time_gap(points, gap_threshold):
+    """split the track where the gap between consecutive fixes is more than
+    gap_threshold"""
     seg = []
     prev_time = None
     for p in points:
-        if prev_time is not None and p['time'] - prev_time > gap_threshold:
+        if prev_time is not None and not p.get('contig') and p['time'] - prev_time > gap_threshold:
             yield seg
             seg = []
         seg.append(p)
@@ -118,6 +128,7 @@ def split_time_gap(points, gap_threshold):
         yield seg
 
 def split_max_points(seg, max_len):
+    """split the track into runs of max_len points"""
     subseg = []
     for p in seg:
         subseg.append(p)
@@ -127,28 +138,126 @@ def split_max_points(seg, max_len):
     if len(subseg) > 1 or len(seg) == 1:
         yield subseg
 
+stop_drift_thresholds = [
+    {'min_time': 0, 'radius': 2, 'emit_every': 60},
+    {'min_time': 30, 'radius': 5, 'emit_every': 30},
+    {'min_time': 300, 'radius': 15, 'emit_every': 120},
+    {'min_time': 3600, 'radius': 50, 'emit_every': 600},
+]
 
-def process(points, options):
-    # straight max dist
-    # straight max time
-    # straight tolerance
-    # clustering removal
+def simplify_stoppage_drift(points, gap_threshold):
+    """eliminate redundant points where the track has 'stopped', accounting
+    for gps drift"""
+
+    def time_diff(p0, p1):
+        return p1['time'] - p0['time']
+
+    def recent_range_func():
+        times = [p['time'] for p in points]
+        def f(i, lookback):
+            """return the index into 'points' marking the start of the time
+            window -- the first point whose time is <= p[i].time - lookback"""
+            threshold = points[i]['time'] - timedelta(seconds=max(lookback, 1e-6))
+            j = bisect_right(times, threshold)
+            return j - 1
+        return f
+    recent_range = recent_range_func()
+
+    def window_max_gap(istart, iend):
+        # TODO: use some indexing/precaching
+        if istart == -1:
+            # end of data reached within time window -- treat this as an 'infinite' gap
+            return None
+        else:
+            return max(time_diff(points[i], points[i+1]) for i in range(istart, iend))
+
+    def within_radius(istart, iend, radius):
+        """determine whether all points from [istart,iend) are within radius of iend"""
+        # TODO: use a spatial index for this?
+        # start with earliest point, as most likely to be farther away
+        for i in range(istart, iend):
+            if dist(points[i], points[iend]) > radius:
+                return False
+        return True
+
+    def active_bracket(i, p):
+        """determine what 'stoppage bracket' applies to the current point, based on how long
+        the track has remained within a certain radius of this point; test each of the brackets,
+        favoring the one with the longest emit interval"""
+
+        for bracket in sorted(stop_drift_thresholds, key=lambda b: -b['emit_every']):
+            # fetch the look-back window of recent fixes
+            i_window_start = recent_range(i, bracket['min_time'])
+
+            # determine if window represents a contiguous block of data -- no gaps between
+            # fixes are too long
+            max_acceptable_gap = timedelta(seconds=max(bracket['emit_every'], gap_threshold))
+            max_gap = window_max_gap(i_window_start, i)
+            if max_gap is None or max_gap > max_acceptable_gap:
+                continue
+
+            # determine if all recent history is within the required 'radius' of the active point
+            if not within_radius(i_window_start, i, bracket['radius']):
+                continue
+            
+            return bracket
+
+    last_point = None
+    for i, p in enumerate(points):
+        ab = active_bracket(i, p)
+
+        if ab:
+            emit = (time_diff(last_point, p) >= timedelta(seconds=ab['emit_every']))
+            contig = True
+        else:
+            emit = True
+            # check if the transition from 'stopped' points back to 'moving' points should be contiguous
+            contig = None
+            if last_point != (points[i - 1] if i > 0 else None):
+                # we're here if the last 'stopped' point before the first 'moving' point was eliminated
+                contig = (time_diff(points[i - 1], p) <= timedelta(seconds=gap_threshold))
+
+        if emit:
+            if contig:
+                p['contig'] = True
+            yield p
+            last_point = p
 
 
-    # stoppage clustering
 
-    # path gap breaking
+straight_length_max = 2000 #m
+straight_time_max = 10 #s
+straight_threshold = 1. #deg
 
-    # path straightening
+def simplify_straightaway(seg):
+    return seg
 
-    # max trkpoint splitting
+
+def process_track(points, options):
+    if options.simplify:
+        before = len(points)
+        logging.info('removing redundant points when stopped')
+        points = list(simplify_stoppage_drift(points, options.gap))
+        logging.info('%d points removed' % (before - len(points)))
 
     logging.info('splitting track by time gaps')
     segs = split_time_gap(points, timedelta(seconds=options.gap))
 
-    logging.info('splitting track by max length')
-    return list(itertools.chain(*(split_max_points(seg, options.max) for seg in segs)))
+    if options.simplify:
+        # TODO: add printouts
+        segs = [simplify_straightaway(seg) for seg in segs]
 
+    if options.max is not None:
+        logging.info('splitting track by max length')
+        segs = list(itertools.chain(*(split_max_points(seg, options.max) for seg in segs)))
+
+    return segs
+
+def _ll(p):
+    return (p['lat'], p['lon'])
+
+def dist(p0, p1):
+    return geodesy.distance(_ll(p0), _ll(p1))
 
 @contextmanager
 def dbsess(conn):
@@ -191,13 +300,18 @@ if __name__ == "__main__":
                       help='styling (kml only); [color]:[line width]')
     parser.add_option('-a', dest='alt', action='store_true', default=False,
                       help='use true altitude (kml only)')
-    parser.add_option('--max', dest='max', type='int', default=5000,
+    parser.add_option('--max', dest='max', type='int',
                       help='max points per track segment')
 
     (options, args) = parser.parse_args()
 
     if options.simplify is None:
         options.simplify = (options.of == 'kml')
+    if options.max is None:
+        options.max = (5000 if options.of == 'kml' else None)
+    if options.of == 'gpx':
+        options.nobc = True
+        options.nostops = True
     options.bc = [float(k.strip()) for k in options.bc.split(',')] if not options.nobc else []
     options.stops = dict(zip(('dist', 'time'), (float(k) for k in options.stops.split(':')))) if not options.nostops else None
 
@@ -215,7 +329,7 @@ if __name__ == "__main__":
         points = list(query_tracklog(sess, start, end))
     logging.debug('%d points fetched' % len(points))
 
-    segments = process(points, options)
+    segments = process_track(points, options)
 
     serializer = {
         'gpx': GPX(),
@@ -228,71 +342,12 @@ if __name__ == "__main__":
 
 """
 
-straight_length_max = 300 #m
-straight_time_max = 10 #s
-straight_threshold = 1. #deg
-#straight_tolerance = 10  #m
 
 
 def get_segments(points):
   return [process_segment(seg) for seg in segmentize(points)]
 
 
-def dist (p0, p1):
-  return geodesy.distance((p0[1], p0[2]), (p1[1], p1[2]))
-
-def bearing (p0, p1):
-  return geodesy.bearing((p0[1], p0[2]), (p1[1], p1[2]))
-
-def process_segment(seg):
-  seg = process_clustering(seg)
-  seg = process_straights(seg)
-  return seg
-
-stopped_threshold = [
-  (0, 2, 60),
-  (30, 5, 30),
-  (300, 15, 120),
-  (3600, 50, 600)
-]
-
-def cluster_bracket (tdiff):
-  bracket = 0
-  while bracket < len(stopped_threshold) and tdiff >= stopped_threshold[bracket][0]:
-    bracket += 1
-  bracket -= 1
-
-def process_clustering(seg):
-  cseg = []
-  bpts = None
-  for (i, p) in enumerate(seg):
-    if bpts == None:
-      include = True
-      bpts = [p] * len(stopped_threshold)
-    elif i == len(seg) - 1:
-      include = True
-    else:
-      applic = [False] * len(bpts)
-      for (j, bp) in enumerate(bpts):
-        bracket = stopped_threshold[j]  
-        if dist(p, bp) <= bracket[1]:
-          applic[j] = fdelta(p[0] - bp[0]) >= bracket[0]
-        else:
-          bpts[j] = p
-
-      applics = [i for (i, _) in enumerate(applic) if applic[i]]
-      max_applic = max(applics) if applics else -1
-
-      if max_applic == -1:
-        include = True
-      else:
-        include = (fdelta(p[0] - cseg[-1][0]) >= stopped_threshold[max_applic][2])
-
-
-    if include:
-      cseg.append(p)
-
-  return cseg
 
 def within_tolerance (p0, p1, plast, pbetween):
   if fdelta(p1[0] - p0[0]) > straight_time_max:
