@@ -9,6 +9,7 @@ import util.util as u
 import itertools
 from bisect import bisect_left, bisect_right
 from util import geodesy
+import csv
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -112,6 +113,22 @@ class GPX(XML):
             children.append(E.extensions(*ext_nodes))
 
         return E.trkpt(*children, **attr)
+
+class CSV(object):
+    """serializer for CSV format"""
+
+    def __init__(self, header=True):
+        self.header = header
+
+    def write(self, f, segs):
+        fields = ['time', 'segment_id', 'lat', 'lon', 'alt', 'speed', 'heading', 'climb', 'h_error', 'v_error']
+        writer = csv.DictWriter(f, fields, extrasaction='ignore')
+        if self.header:
+            writer.writerow(dict(zip(fields, fields)))
+        for i, seg in enumerate(segs):
+            for p in seg:
+                p['segment_id'] = i + 1
+                writer.writerow(p)
 
 def split_time_gap(points, gap_threshold):
     """split the track where the gap between consecutive fixes is more than
@@ -322,12 +339,19 @@ def parse_style(sty):
 def print_(text, newline=True):
     sys.stderr.write(str(text) + ('\n' if newline else ''))
 
+def format_type(format):
+    return {
+        'kml': 'visual',
+        'gpx': 'raw',
+        'csv': 'raw',
+    }[format]
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG, stream=sys.stderr)
 
     parser = OptionParser(usage='usage: %prog [options] start [end]')
-    parser.add_option('-f', '--format', dest='of', default='kml',
-                      help='output format (gpx, kml, etc.)')
+    parser.add_option('-o', '--of', '--format', dest='of', default='kml',
+                      help='output format (gpx, kml, csv, etc.)')
     parser.add_option('--db', dest='db', default=settings.GPS_LOG_DB,
                       help='tracklog database connector')
     parser.add_option('-g', '--gap', dest='gap', type='int', default=3,
@@ -352,10 +376,10 @@ if __name__ == "__main__":
     (options, args) = parser.parse_args()
 
     if options.simplify is None:
-        options.simplify = (options.of == 'kml')
+        options.simplify = (format_type(options.of) == 'visual')
     if options.max is None:
         options.max = (5000 if options.of == 'kml' else None)
-    if options.of == 'gpx':
+    if format_type(options.of) == 'raw':
         options.nobc = True
         options.nostops = True
     options.bc = [float(k.strip()) for k in options.bc.split(',')] if not options.nobc else []
@@ -380,8 +404,10 @@ if __name__ == "__main__":
     serializer = {
         'gpx': GPX(),
         'kml': KML(true_alt=options.alt, styling=parse_style(options.style)),
+        'csv': CSV(),
     }[options.of]
 
+    print_('writing to %s file...' % options.of)
     serializer.write(sys.stdout, segments)
         
 
