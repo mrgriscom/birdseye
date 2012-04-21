@@ -149,9 +149,6 @@ def simplify_stoppage_drift(points, gap_threshold):
     """eliminate redundant points where the track has 'stopped', accounting
     for gps drift"""
 
-    def time_diff(p0, p1):
-        return p1['time'] - p0['time']
-
     def recent_range_func():
         times = [p['time'] for p in points]
         def f(i, lookback):
@@ -228,15 +225,43 @@ def simplify_stoppage_drift(points, gap_threshold):
             yield p
             last_point = p
 
-
+def simplify_straightaway(seg):
+    """eliminate redundant points along a straight path"""
+    yield seg[0]
+    i = 0
+    while i < len(seg) - 1:
+        j = i + 2
+        while j < len(seg):
+            if within_straightness_tolerance(seg[i], seg[j], seg[j-1]):
+                j += 1
+            else:
+                break
+        i = j - 1
+        yield seg[i]
 
 straight_length_max = 2000 #m
-straight_time_max = 10 #s
+straight_time_max = timedelta(seconds=30)
 straight_threshold = 1. #deg
 
-def simplify_straightaway(seg):
-    return seg
+def within_straightness_tolerance (pstart, pend, pmiddle):
+    #assume distances are small enough that the curvature of the earth is irrelevant
+    if time_diff(pstart, pend) > straight_time_max:
+        return False
+    elif dist(pstart, pend) > straight_length_max:
+        return False
+  
+    bse = bearing(pstart, pend)
+    bsm = bearing(pstart, pmiddle)
+    bme = bearing(pmiddle, pend)
 
+    if any(b is None for b in (bse, bsm, bme)):
+        return False
+    if abs(geodesy.anglenorm(bsm - bse)) > straight_threshold:
+        return False
+    elif abs(geodesy.anglenorm(bme - bse)) > straight_threshold:
+        return False
+
+    return True
 
 def process_track(points, options):
     def remove_redundant(simplifyfunc, countfunc, caption, data):
@@ -255,7 +280,7 @@ def process_track(points, options):
     segs = list(split_time_gap(points, timedelta(seconds=options.gap)))
     print_('%d contiguous tracks' % len(segs))
 
-    segs = remove_redundant(lambda segs: [simplify_straightaway(seg) for seg in segs],
+    segs = remove_redundant(lambda segs: [list(simplify_straightaway(seg)) for seg in segs],
                             lambda segs: sum(len(seg) for seg in segs),
                             'along straightaways', segs)
 
@@ -270,6 +295,12 @@ def _ll(p):
 
 def dist(p0, p1):
     return geodesy.distance(_ll(p0), _ll(p1))
+
+def bearing(p0, p1):
+    return geodesy.bearing(_ll(p0), _ll(p1))
+
+def time_diff(p0, p1):
+    return p1['time'] - p0['time']
 
 @contextmanager
 def dbsess(conn):
@@ -359,73 +390,11 @@ if __name__ == "__main__":
 
 
 
-def get_segments(points):
-  return [process_segment(seg) for seg in segmentize(points)]
 
 
-
-def within_tolerance (p0, p1, plast, pbetween):
-  if fdelta(p1[0] - p0[0]) > straight_time_max:
-    return False
-  elif dist(p0, p1) > straight_length_max:
-    return False
-  
-  b01 = bearing(p0, p1)
-  b0L = bearing(p0, plast)
-  bL1 = bearing(plast, p1)
-
-  if b01 == None or b0L == None or bL1 == None:
-    return False
-
-  if abs(geodesy.anglenorm(b0L - b01)) > straight_threshold:
-    return False
-  elif abs(geodesy.anglenorm(bL1 - b01)) > straight_threshold:
-    return False
-
-  #todo: handle tolerance
-
-  return True
-
-#assume distances are small enough that the curvature of the earth is irrelevant
-def process_straights(seg):
-  sseg = [seg[0]]
-  i = 0
-  while i < len(seg) - 1:
-    j = i + 2
-    while j < len(seg):
-      if within_tolerance(seg[i], seg[j], seg[j-1], seg[i+1:j-1]):
-        j += 1
-      else:
-        break
-    i = j - 1
-    sseg.append(seg[i])
-  return sseg
-
-def to_kml(stream, segments, bc, stops, color):
-  open = ""<?xml version="1.0" encoding="UTF-8"?>
-<kml xmlns="http://earth.google.com/kml/2.1">
-<Document>
-""
-
-  startseg = ""<Placemark>
-<Style><LineStyle><color>%sff</color><width>2</width></LineStyle></Style>
-<LineString>
-<tessellate>1</tessellate>
-<altitudeMode>%s</altitudeMode>
-<coordinates>
-"" % (color, 'absolute' if usealt else 'clampToGround')
-
-  endseg = ""</coordinates>
-</LineString>
-</Placemark>
-""
 
   startpt = ""<Placemark><name>%s</name><Point><coordinates>""
   endpt = ""</coordinates></Point></Placemark>
-""
-
-  close = ""</Document>
-</kml>
 ""
 
   startf = ""<Folder><name>%s</name><open>1</open>
