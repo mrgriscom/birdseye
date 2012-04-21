@@ -163,13 +163,18 @@ def simplify_stoppage_drift(points, gap_threshold):
         return f
     recent_range = recent_range_func()
 
-    def window_max_gap(istart, iend):
-        # TODO: use some indexing/precaching
-        if istart == -1:
-            # end of data reached within time window -- treat this as an 'infinite' gap
-            return None
-        else:
-            return max(time_diff(points[i], points[i+1]) for i in range(istart, iend))
+    def window_max_gap_func():
+        gaps = [time_diff(points[i], points[i + 1]) for i in range(len(points) - 1)]
+        ix = u.AggregationIndex(max, gaps, 3)
+        def f(istart, iend):
+            """return the maximum time gap between fixes in points [istart, iend]"""
+            if istart == -1:
+                # end of data reached within time window -- treat this as an 'infinite' gap
+                return None
+            else:
+                return ix.aggregate(istart, iend)
+        return f
+    window_max_gap = window_max_gap_func()
 
     def within_radius(istart, iend, radius):
         """determine whether all points from [istart,iend) are within radius of iend"""
@@ -234,21 +239,28 @@ def simplify_straightaway(seg):
 
 
 def process_track(points, options):
-    if options.simplify:
-        before = len(points)
-        logging.info('removing redundant points when stopped')
-        points = list(simplify_stoppage_drift(points, options.gap))
-        logging.info('%d points removed' % (before - len(points)))
+    def remove_redundant(simplifyfunc, countfunc, caption, data):
+        if options.simplify:
+            before = countfunc(data)
+            print_('removing redundant points %s... ' % caption, False)
+            data = simplifyfunc(data)
+            print_('%d points removed' % (before - countfunc(data)))
+        return data
 
-    logging.info('splitting track by time gaps')
-    segs = split_time_gap(points, timedelta(seconds=options.gap))
+    points = remove_redundant(lambda points: list(simplify_stoppage_drift(points, options.gap)),
+                              lambda points: len(points),
+                              'when stopped', points)
 
-    if options.simplify:
-        # TODO: add printouts
-        segs = [simplify_straightaway(seg) for seg in segs]
+    print_('splitting track by time gaps... ', False)
+    segs = list(split_time_gap(points, timedelta(seconds=options.gap)))
+    print_('%d contiguous tracks' % len(segs))
+
+    segs = remove_redundant(lambda segs: [simplify_straightaway(seg) for seg in segs],
+                            lambda segs: sum(len(seg) for seg in segs),
+                            'along straightaways', segs)
 
     if options.max is not None:
-        logging.info('splitting track by max length')
+        print_('splitting track by max length')
         segs = list(itertools.chain(*(split_max_points(seg, options.max) for seg in segs)))
 
     return segs
@@ -275,6 +287,9 @@ def parse_style(sty):
     if len(color) == 3:
         color = ''.join(''.join(x) for x in zip(color, color))
     return {'color': color, 'width': int(width)}
+
+def print_(text, newline=True):
+    sys.stderr.write(str(text) + ('\n' if newline else ''))
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG, stream=sys.stderr)
@@ -324,10 +339,10 @@ if __name__ == "__main__":
     except IndexError:
         end = None
 
-    logging.info('exporting %s to %s' % (start, end or '--'))
+    print_('exporting [%sZ] to [%sZ]... ' % (start, end or '--'), False)
     with dbsess(options.db) as sess:
         points = list(query_tracklog(sess, start, end))
-    logging.debug('%d points fetched' % len(points))
+    print_('%d points fetched' % len(points))
 
     segments = process_track(points, options)
 
