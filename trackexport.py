@@ -395,9 +395,10 @@ def interpolate_point(pa, pb, k):
 def process_markers(points, options):
     # breadcrumbs
     for interval in sorted(options.bc, reverse=True):
-        print_('marking breadcrumbs at interval %s' % interval)
+        interval_name = u.format_interval(interval, expand=False)
+        print_('marking breadcrumbs at interval %s' % interval_name)
         bcs = list(breadcrumbs(points, u.fdelta(interval), timedelta(seconds=options.gap)))
-        yield ('breadcrumbs: %s' % interval, bcs)
+        yield ('breadcrumbs: %s' % interval_name, bcs)
 
 def _ll(p):
     return (p['lat'], p['lon'])
@@ -486,9 +487,11 @@ if __name__ == "__main__":
     except IndexError:
         end = None
 
-    # todo: print time interval
-    print_('output format: %s' % options.of)
-    print_('exporting [%sZ] to [%sZ]... ' % (start, end or '--'), False)
+    print_('exporting to %s' % options.of)
+    if end:
+        print_('fetching [%sZ] to [%sZ] (span: %s)... ' % (start, end, u.format_interval(end - start, expand=False, sep=' ')), False)
+    else:
+        print_('fetching [%sZ] to end of log... ' % start, False)
     with dbsess(options.db) as sess:
         points = list(query_tracklog(sess, start, end))
     print_('%d points fetched' % len(points))
@@ -524,21 +527,6 @@ if __name__ == "__main__":
     stream.write(endf)
   stream.write(endf)
 
-def tlen (i):
-  i = int(i)
-  s = i % 60
-  m = (i / 60) % 60
-  h = (i / 3600) % 24
-  d = i / 86400
-
-  if d > 0:
-    return '%dd%02dh%02dm%02ds' % (d, h, m, s)
-  elif h > 0:
-    return '%dh%02dm%02ds' % (h, m, s)
-  elif m > 0:
-    return '%dm%02ds' % (m, s)
-  else:
-    return '%ds' % (s)
 
 stop_radius = 40
 stop_interval = 20

@@ -1,6 +1,6 @@
 import time
 import collections
-from datetime import datetime
+from datetime import datetime, timedelta
 import operator
 import itertools
 
@@ -187,3 +187,56 @@ def from_quadindex(ix):
     ixsp = zip(*(unquad(ix))) if ix else [[], []]
     x, y = [from_binary(v) for v in ixsp]
     return (len(ix), x, y)
+
+def format_interval(interval, expand=True, max_unit=None, sep='', labels={}, pad=True, colons=False, show_secs=True):
+    fields = ['d', 'h', 'm', 's']
+    _labels = dict(zip(fields, fields))
+    _labels.update(labels)
+    labels = _labels
+
+    if colons:
+        sep = ':'
+        labels = dict((f, '') for f in labels)
+        expand=True
+        pad = True
+
+    if max_unit:
+        expand = True
+    if not expand:
+        pad = False
+
+    if isinstance(interval, timedelta):
+        interval = fdelta(interval)
+
+    t = {
+        's': interval % 60,
+        'm': (interval // 60) % 60,
+        'h': (interval // 3600) % 24,
+        'd': interval // 86400,
+    }
+
+    min_filled = 's'
+    for f in reversed(fields):
+        if t[f]:
+            min_filled = f
+            break
+    max_filled = 's'
+    for f in fields:
+        if t[f]:
+            max_filled = f
+            break
+
+    if not expand:
+        disp = [f for f in fields if t[f]] or ['s']
+    else:
+        disp = fields[min(fields.index(max_filled), fields.index(max_unit or 's')):]
+
+    if not show_secs:
+        disp.remove('s')
+
+    def format_field(f, val, first):
+        label = labels[f]
+        label = ('s' if val != 1 else '').join(label.split('{s}'))
+        return '%s%s' % (('%d' if first or not pad else '%02d') % val, label)
+
+    return sep.join(format_field(f, t[f], i == 0) for i, f in enumerate(disp))
