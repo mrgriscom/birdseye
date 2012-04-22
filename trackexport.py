@@ -10,6 +10,7 @@ import itertools
 from bisect import bisect_left, bisect_right
 from util import geodesy
 import csv
+import math
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -29,8 +30,8 @@ class XML(object):
     def __init__(self):
         self.E = _E(self.NAMESPACE, **self.EXT_NS)
 
-    def write(self, f, segs):
-        root = self.serialize(segs)
+    def write(self, f, segs, markers):
+        root = self.serialize(segs, markers)
         etree.ElementTree(element=root).write(f, encoding='utf-8', pretty_print=True)
 
 class KML(XML):
@@ -43,12 +44,31 @@ class KML(XML):
         self.true_alt = true_alt
         self.styling = styling
 
-    def serialize(self, segs):
+    def serialize(self, segs, markers):
         E = self.E
+
+        folders = []
+        for name, points in markers:
+            folders.append((name, (self.waypoint(p, p.get('name')) for p in points)))
+        folders.append(('track', (self.segment(s) for s in segs)))
+
         return E.kml(
-            E.Document(*(self.segment(s) for s in segs))
+            E.Document(
+                E.open('1'),
+                *(self.folder(*f) for f in folders)
+            )
         )
         
+    def folder(self, name, content):
+        E = self.E
+
+        return E.Folder(
+            E.name(name),
+            E.visibility('1'),
+            E.open('0'),
+            *content
+        )
+
     def segment(self, points):
         E = self.E
 
@@ -62,8 +82,21 @@ class KML(XML):
             ))
         children.append(E.LineString(
             E.tessellate(str(1)),
-            E.altitudeMode('absolute' if self.true_alt else 'clampToGround'),
+            self.altmode(),
             E.coordinates('\n%s\n' % '\n'.join(self.point(p) for p in points))
+        ))
+
+        return E.Placemark(*children)
+
+    def waypoint(self, point, name=None):
+        E = self.E
+
+        children = []
+        if name:
+            children.append(E.name(name))
+        children.append(E.Point(
+            self.altmode(),
+            E.coordinates(self.point(point))
         ))
 
         return E.Placemark(*children)
@@ -74,6 +107,9 @@ class KML(XML):
             fmt += ',%(alt)f'
         return fmt % p
 
+    def altmode(self):
+        return self.E.altitudeMode('absolute' if self.true_alt else 'clampToGround')     
+
 class GPX(XML):
     """serializer for GPX format"""
 
@@ -82,7 +118,7 @@ class GPX(XML):
         'be': 'http://mrgris.com/schema/birdseye/gpxext/1.0',
     }
 
-    def serialize(self, segs):
+    def serialize(self, segs, _):
         E = self.E
         return E.gpx(
             E.trk(*(self.segment(s) for s in segs))
@@ -120,8 +156,8 @@ class CSV(object):
     def __init__(self, header=True):
         self.header = header
 
-    def write(self, f, segs):
-        fields = ['time', 'segment_id', 'lat', 'lon', 'alt', 'speed', 'heading', 'climb', 'h_error', 'v_error']
+    def write(self, f, segs, _):
+        fields = ['time', 'lat', 'lon', 'alt', 'speed', 'heading', 'climb', 'h_error', 'v_error', 'segment_id']
         writer = csv.DictWriter(f, fields, extrasaction='ignore')
         if self.header:
             writer.writerow(dict(zip(fields, fields)))
@@ -302,10 +338,66 @@ def process_track(points, options):
                             'along straightaways', segs)
 
     if options.max is not None:
-        print_('splitting track by max length')
+        print_('splitting tracks by max-points-per-track limit (longest %d points)' % max(len(seg) for seg in segs))
         segs = list(itertools.chain(*(split_max_points(seg, options.max) for seg in segs)))
 
     return segs
+
+breadcrumb_exclusion_radius = 100. # m
+
+def breadcrumbs(points, interval, gap_threshold):
+    last_bc = None
+    for i, p in enumerate(points):
+        pprev = points[i - 1] if i > 0 else None
+
+        t = u.to_timestamp(p['time'])
+        tprev = None
+        if pprev is not None:
+            # allow interpolation of breadcrumb between points if points close enough in time or distance
+            # this handles brief gaps around the breadcrumb point or extended gaps during which we don't move
+            if time_diff(pprev, p) <= gap_threshold or dist(p, pprev) <= breadcrumb_exclusion_radius:
+                tprev = u.to_timestamp(pprev['time'])
+
+        # determine where between the two points the breadcrumb lies
+        # i think this is vulnerable to floating point errors if interval is non-integer
+        if t % interval == 0.:
+            # common case
+            interp = 1.
+        elif tprev and (tprev // interval != t // interval):
+            # choose the earliest breadcrumb point if range spans multiple (i.e., extended gap)
+            target = math.ceil(tprev / interval + 1e-6)
+            interp = (interval * target - tprev) / (t - tprev)
+        else:
+            continue
+
+        if interp == 1.:
+            bc = p
+        else:
+            bc = interpolate_point(pprev, p, interp)
+        bc['name'] = str(bc['time'])
+
+        if last_bc is None or dist(last_bc, bc) > breadcrumb_exclusion_radius:
+            yield bc
+            last_bc = bc
+
+def interpolate_point(pa, pb, k):
+    b = bearing(pa, pb)
+    d = dist(pa, pb)
+    pinterp = geodesy.plot(_ll(pa), b, k * d)[0]
+    return {
+        'time': datetime.utcfromtimestamp(u.linear_interp(u.to_timestamp(pa['time']), u.to_timestamp(pb['time']), k)),
+        'lat': pinterp[0],
+        'lon': pinterp[1],
+        'alt': u.linear_interp(pa['alt'], pb['alt'], k) if all(p['alt'] is not None for p in (pa, pb)) else None,
+    }
+    
+        
+def process_markers(points, options):
+    # breadcrumbs
+    for interval in sorted(options.bc, reverse=True):
+        print_('marking breadcrumbs at interval %d' % interval)
+        bcs = list(breadcrumbs(points, interval, timedelta(seconds=options.gap)))
+        yield ('breadcrumbs: %d' % interval, bcs)
 
 def _ll(p):
     return (p['lat'], p['lon'])
@@ -366,7 +458,7 @@ if __name__ == "__main__":
     parser.add_option('--stops', dest='stops', default='20:40',
                       help='leave stoppage markers, where position does not move more than X meters for at least Y seconds; [X]:[Y] (kml only)')
     parser.add_option('--no-stops', dest='nostops', action='store_true')
-    parser.add_option('--style', dest='style', default='fff:1',
+    parser.add_option('--style', dest='style', default='f40:2',
                       help='styling (kml only); [color]:[line width]')
     parser.add_option('-a', dest='alt', action='store_true', default=False,
                       help='use true altitude (kml only)')
@@ -394,11 +486,14 @@ if __name__ == "__main__":
     except IndexError:
         end = None
 
+    # todo: print time interval
+    print_('output format: %s' % options.of)
     print_('exporting [%sZ] to [%sZ]... ' % (start, end or '--'), False)
     with dbsess(options.db) as sess:
         points = list(query_tracklog(sess, start, end))
     print_('%d points fetched' % len(points))
 
+    markers = list(process_markers(points, options))
     segments = process_track(points, options)
 
     serializer = {
@@ -407,8 +502,8 @@ if __name__ == "__main__":
         'csv': CSV(),
     }[options.of]
 
-    print_('writing to %s file...' % options.of)
-    serializer.write(sys.stdout, segments)
+    print_('writing...')
+    serializer.write(sys.stdout, segments, markers)
         
 
 

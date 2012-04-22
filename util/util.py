@@ -91,6 +91,9 @@ def fact_div(a, b):
     """return a! / b!"""
     return product(xrange(b + 1, a + 1)) if a >= b else 1. / fact_div(b, a)
 
+def linear_interp(a, b, k):
+    return (1. - k) * a + k * b
+
 def product(n):
     """return the product of a set of numbers
 
@@ -164,3 +167,23 @@ class AggregationIndex(object):
                 return self.index[(lo, hi)]
             except KeyError:
                 return None
+
+def to_quadindex(z, x, y):
+    def binary(h, k):
+        return [(h / 2**i) % 2 for i in range(k - 1, -1, -1)]
+
+    quad = [2 * j + i for i, j in zip(*(binary(h, z) for h in (x, y)))]
+    return ''.join(str(q) for q in quad)
+
+def from_quadindex(ix):
+    def unquad(ix):
+        for c in ix:
+            q = int(c)
+            yield (q % 2, q / 2)
+
+    def from_binary(v):
+        return reduce(lambda a, b: 2 * a + b, v, 0)
+
+    ixsp = zip(*(unquad(ix))) if ix else [[], []]
+    x, y = [from_binary(v) for v in ixsp]
+    return (len(ix), x, y)
