@@ -391,7 +391,30 @@ def interpolate_point(pa, pb, k):
         'alt': u.linear_interp(pa['alt'], pb['alt'], k) if all(p['alt'] is not None for p in (pa, pb)) else None,
     }
     
-        
+def stopped_markers(points, radius, threshold):
+    # this algorithm feels sub-optimal; also, the radius is treated more
+    # like a diameter
+
+    def mk_stoppage(stopped):
+        duration = time_diff(stopped[0], stopped[-1])
+        tmid = stopped[0]['time'] + timedelta(seconds=0.5 * u.fdelta(duration))
+        pmid = stopped[bisect_left([p['time'] for p in stopped], tmid)]
+        pmid.update({'duration': duration, 'name': u.format_interval(duration), 'alt': None})
+        return pmid
+
+    def stoppage(i, j):
+        if time_diff(points[i], points[j - 1]) >= threshold:
+            yield mk_stoppage(points[i:j])
+
+    i_base = 0
+    for i, p in enumerate(points):
+        if dist(p, points[i_base]) > radius:
+            for s in stoppage(i_base, i):
+                yield s
+            i_base = i
+    for s in stoppage(i_base, len(points)):
+        yield s
+
 def process_markers(points, options):
     # breadcrumbs
     for interval in sorted(options.bc, reverse=True):
@@ -399,6 +422,22 @@ def process_markers(points, options):
         print_('marking breadcrumbs at interval %s' % interval_name)
         bcs = list(breadcrumbs(points, u.fdelta(interval), timedelta(seconds=options.gap)))
         yield ('breadcrumbs: %s' % interval_name, bcs)
+
+    # stops
+    if options.stops:
+        print_('marking where stopped for at least %(time)d seconds (%(dist)dm radius)' % options.stops)
+        stops = stopped_markers(points, options.stops['dist'], timedelta(seconds=options.stops['time']))
+
+        brackets = [timedelta(minutes=m) for m in [1, 5, 30, 180]]
+        bucketed = u.map_reduce(stops, lambda s: [(bisect_right(brackets, s['duration']), s)], lambda v: sorted(v, key=lambda s: s['time']))
+        def bucket_name(i):
+            if i < len(brackets):
+                return '<%s' % u.format_interval(brackets[i], expand=False)
+            else:
+                return '>%s' % u.format_interval(brackets[-1], expand=False)
+
+        for i, v in sorted(bucketed.items(), reverse=True):
+            yield ('stopped: %s' % bucket_name(i), v)
 
 def _ll(p):
     return (p['lat'], p['lon'])
@@ -456,7 +495,7 @@ if __name__ == "__main__":
                       help='leave breadcrumb markers (comma-separated list of intervals (minutes)) (kml only)')
     parser.add_option('--no-bc', dest='nobc', action='store_true',
                       help='disable breadcrumb markers')
-    parser.add_option('--stops', dest='stops', default='20:40',
+    parser.add_option('--stops', dest='stops', default='40:20',
                       help='leave stoppage markers, where position does not move more than X meters for at least Y seconds; [X]:[Y] (kml only)')
     parser.add_option('--no-stops', dest='nostops', action='store_true')
     parser.add_option('--style', dest='style', default='f40:2',
@@ -507,48 +546,4 @@ if __name__ == "__main__":
 
     print_('writing...')
     serializer.write(sys.stdout, segments, markers)
-        
 
-
-"""
-
-
-  stream.write(startf % 'stops')
-  stopbuck = []
-  stopbuck.append(('over 5 min', [s for s in stops if s[1] >= 300]))
-  stopbuck.append(('over 1 min', [s for s in stops if s[1] >= 60 and s[1] < 300]))
-  stopbuck.append(('under 1 min', [s for s in stops if s[1] < 60]))
-  for (lab, stops) in stopbuck:
-    stream.write(startf % lab)
-    for stop in stops:
-      stream.write(startpt % ('%s - %s' % (stop[0][0].strftime('%m-%d %H:%M'), tlen(stop[1]))))
-      print '%s,%s,%s' % (stop[0][2], stop[0][1], 0)
-      stream.write(endpt)
-    stream.write(endf)
-  stream.write(endf)
-
-
-stop_radius = 40
-stop_interval = 20
-
-def find_stops(points):
-  base = None
-  n = None
-  stops = []
-  for p in points:
-    if base == None:
-      base = p
-      n = 0
-    else:
-      if dist(p, base) <= stop_radius:
-        n = fdelta(p[0] - base[0])
-      else:
-        if n >= stop_interval:
-          stops.append((base, n))
-        base = p
-        n = 0
-  if n >= stop_interval:
-    stops.append((base, n))
-  return stops
-
-"""
