@@ -395,9 +395,9 @@ def interpolate_point(pa, pb, k):
 def process_markers(points, options):
     # breadcrumbs
     for interval in sorted(options.bc, reverse=True):
-        print_('marking breadcrumbs at interval %d' % interval)
-        bcs = list(breadcrumbs(points, interval, timedelta(seconds=options.gap)))
-        yield ('breadcrumbs: %d' % interval, bcs)
+        print_('marking breadcrumbs at interval %s' % interval)
+        bcs = list(breadcrumbs(points, u.fdelta(interval), timedelta(seconds=options.gap)))
+        yield ('breadcrumbs: %s' % interval, bcs)
 
 def _ll(p):
     return (p['lat'], p['lon'])
@@ -474,7 +474,7 @@ if __name__ == "__main__":
     if format_type(options.of) == 'raw':
         options.nobc = True
         options.nostops = True
-    options.bc = [float(k.strip()) for k in options.bc.split(',')] if not options.nobc else []
+    options.bc = [timedelta(minutes=float(k.strip())) for k in options.bc.split(',')] if not options.nobc else []
     options.stops = dict(zip(('dist', 'time'), (float(k) for k in options.stops.split(':')))) if not options.nostops else None
 
     try:
@@ -510,35 +510,6 @@ if __name__ == "__main__":
 """
 
 
-
-
-
-
-  startpt = ""<Placemark><name>%s</name><Point><coordinates>""
-  endpt = ""</coordinates></Point></Placemark>
-""
-
-  startf = ""<Folder><name>%s</name><open>1</open>
-""
-  endf = ""</Folder>
-""
-
-
-  stream.write(open)
-
-  stream.write(startf % 'breadcrumbs')
-  bcbuck = []
-  bcbuck.append(('hourly', [p for p in bc if int(fdelta(p[0] - datetime(2000, 1, 1))) % 3600 == 0]))
-  bcbuck.append(('5 minutes', [p for p in bc if int(fdelta(p[0] - datetime(2000, 1, 1))) % 3600 != 0]))
-  for (lab, bc) in bcbuck:
-    stream.write(startf % lab)
-    for p in bc:
-      stream.write(startpt % (p[0].strftime('%m-%d %H:%M')))
-      print '%s,%s,%s' % (p[2], p[1], 0)
-      stream.write(endpt)
-    stream.write(endf)
-  stream.write(endf)
-
   stream.write(startf % 'stops')
   stopbuck = []
   stopbuck.append(('over 5 min', [s for s in stops if s[1] >= 300]))
@@ -552,17 +523,6 @@ if __name__ == "__main__":
       stream.write(endpt)
     stream.write(endf)
   stream.write(endf)
-
-  stream.write(startf % 'path')
-  for seg in segments:
-    for s in sub_segmentize(seg):
-      stream.write(startseg)
-      for p in s:
-        print '%s,%s,%s' % (p[2], p[1], p[3] if usealt else 0)
-      stream.write(endseg)
-  stream.write(endf)
-
-  stream.write(close)
 
 def tlen (i):
   i = int(i)
@@ -602,41 +562,5 @@ def find_stops(points):
   if n >= stop_interval:
     stops.append((base, n))
   return stops
-
-def breadcrumbs(points, interval):
-  bcs = []
-  data = [(p, int(fdelta(p[0] - datetime(2000, 1, 1)))) for p in points]
-  moved = True 
-  for i in range(0, len(points)):
-    if len(bcs) > 0 and not moved and dist(data[i][0], bcs[-1]) >= 100.:
-      moved = True      
-
-    mark = False
-    if data[i][1] % interval < 3 and (i == 0 or data[i][1]/interval != data[i-1][1]/interval):
-      if moved:
-        bcs.append(data[i][0])
-        moved = False
-    elif i > 0 and fdelta(data[i][0][0] - data[i-1][0][0]) > 5. and data[i][1]/interval != data[i-1][1]/interval and dist(data[i][0], data[i-1][0]) < 100.:
-      if moved:
-        newpt = (datetime(2000, 1, 1) + timedelta(seconds=(data[i-1][1]/interval + 1)*interval), data[i-1][0][1], data[i-1][0][2], data[i-1][0][3])
-        bcs.append(newpt)
-        moved = False
-        sys.stderr.write(str(newpt) + '\n')
-
-  return bcs
-
-if __name__ == "__main__":
-  points = ...
-
-  bc1 = breadcrumbs(points, 300)
-  bc2 = breadcrumbs(points, 3600)
-  bcm = {}
-  for bcd in (bc1, bc2):
-    for p in bcd:
-      bcm[p[0]] = p
-  bc = sorted(bcm.values(), key=lambda x: x[0])
-
-  stops = find_stops(points)
-  to_kml(sys.stdout, get_segments(points), bc, stops, color)
 
 """
