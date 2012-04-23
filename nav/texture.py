@@ -87,3 +87,47 @@ def tile_file (mode, zoom, x, y):
   print path
   return path
 
+
+
+def uuid_path(uuid, suffix='png'):
+  path = settings.TILE_ROOT
+  if path[-1] != '/':
+    path += '/'
+
+  buckets = [3]
+  for i in buckets:
+    path += uuid[:i] + '/'
+
+  path += uuid + ('.%s' % suffix)
+  return path
+
+
+from sqlalchemy import create_engine, Column, DateTime, Float, Integer, String, CheckConstraint
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+
+Base = declarative_base()
+class Tile(Base):
+    __tablename__ = 'tiles'
+
+    z = Column(Integer, primary_key=True)
+    x = Column(Integer, primary_key=True)
+    y = Column(Integer, primary_key=True)
+    type = Column(Integer, primary_key=True)
+    uuid = Column(String)
+
+def dbsess():
+    e = create_engine(settings.TILE_DB)
+    return sessionmaker(bind=e)()
+
+def get_tile(sess, z, x, y, type):
+    t = sess.query(Tile).get((z, x, y, type))
+    if t:
+        path = uuid_path(t.uuid)
+        import __builtin__
+        with __builtin__.open(path) as f:
+            return f.read()
+    else:
+        return None
+
+
