@@ -14,9 +14,14 @@ import maptile
 from downloadmanager import DownloadManager
 import settings
 
+from sqlalchemy.sql.expression import tuple_
+
 import sys #debug
 
 hash_length = 8
+
+
+
 
 def null_digest ():
   return '00' * hash_length
@@ -29,25 +34,14 @@ def tile_url ((zoom, x, y), type):
   return "http://mt%d.google.com/vt/x=%d&y=%d&z=%d" % ((x + y) % 4, x, y, zoom)
   #return "http://mt%d.google.com/mt?x=%d&y=%d&z=%d" % ((x + y) % 4, x, y, zoom)
 
-def dbconn ():
-  try:
-    return psycopg2.connect(database=settings.TILE_DB.split('/')[-1])
-  except:
-    print 'can\'t connect to database'
-    sys.exit()
-
 def query_tiles (conn, chunk, ignore_missing):
-  qtiles = [(z, x, y, 1) for (z, x, y) in chunk]
-  stiles = ['(%s)' % ', '.join([str(f) for f in qt]) for qt in qtiles]
-  exclude_clause = ' and uuid != \'%s\'' % null_digest() if ignore_missing else ''
-  query = 'select z, x, y, type from tiles where (z, x, y, type) in (%s)%s;' % (', '.join(stiles), exclude_clause)
-  
-  curs = conn.cursor()
-  curs.execute(query)
-  rows = curs.fetchall()
-  curs.close()
+  layer = 'gmap-map'
 
-  return set([(z, x, y) for (z, x, y, t) in rows])
+  q = conn.query(maptile.Tile).filter(maptile.Tile.layer == layer).filter(tuple_(maptile.Tile.z, maptile.Tile.x, maptile.Tile.y).in_(list(chunk)))
+  if ignore_missing:
+    q = q.filter(maptile.Tile.uuid != null_digest())
+
+  return set((t.z, t.x, t.y) for t in q)
 
 def chunker (container, chunk_size):
   chunk = []
@@ -118,6 +112,7 @@ def random_walk (tiles):
     for t in random_walk_level(filter_set(tiles, lambda (z, x, y): z == zoom)):
       yield t
 
+# TODO use path calc from Tile object
 def save_tile (data, digest):
   path = settings.TILE_ROOT
   if path[-1] != '/':
@@ -142,25 +137,13 @@ def save_tile (data, digest):
 
 c = 0 #debug
 def register_tile (conn, tile, digest):
-  check_query = 'select uuid from tiles where (z, x, y, type) = (%(z)s, %(x)s, %(y)s, %(type)s);'
-  insert_query = 'insert into tiles (z, x, y, type, uuid, fetched_on) values (%(z)s, %(x)s, %(y)s, %(type)s, %(uuid)s, %(now)s);'
-  update_query = 'update tiles set uuid = %(uuid)s, fetched_on = %(now)s where (z, x, y, type) = (%(z)s, %(x)s, %(y)s, %(type)s);'
+  # TODO: handle refreshing a tile (update uuid, fetched_on)
 
-  (z, x, y) = tile
-  vals = dict(z=z, x=x, y=y, type=1, uuid=digest, now=datetime.utcnow())
+  z, x, y = tile
+  t = maptile.Tile(z=z, x=x, y=y, layer='gmap-map', uuid=digest)
 
-  curs = conn.cursor()
-  curs.execute(check_query, vals)
-  if curs.rowcount > 0:
-    curs.execute(update_query, vals)
-  else:
-    curs.execute(insert_query, vals)
-
-  #global c #debug
-  #c += 1 #debug
-  #if c % 200 == 0: #debug
-  conn.commit()
-  curs.close()
+  conn.add(t)
+  conn.commit() # TODO: only commit every N?
 
 def process_tile (conn, tile, status, data):
   if status in [httplib.OK, httplib.NOT_FOUND]:
@@ -209,7 +192,7 @@ class tile_enumerator (threading.Thread):
   def __init__  (self, region, depth):
     threading.Thread.__init__(self)
 
-    self.tess = maptile.region_tessellation(region, depth)
+    self.tess = maptile.RegionTessellation(region, depth)
     self.est_num_tiles = self.tess.size_estimate()
     self.tiles = set()
     self.count = 0
@@ -330,12 +313,12 @@ def download_curses (w, region, overlay, max_depth, refresh_mode):
 
   print_tile_counts(w, tile_counts(te.tiles), 'Tiles in region', 4, 2, max_depth=max_depth)
 
-  tc = tile_culler(te.tiles, refresh_mode, dbconn())
+  tc = tile_culler(te.tiles, refresh_mode, maptile.dbsess())
   monitor(w, 1, tc, 'Culling', 15)
 
   print_tile_counts(w, tile_counts(tc.tiles), 'Tiles to download', 4, 19, max_depth=max_depth)
 
-  td = tile_downloader(tc.tiles, dbconn())
+  td = tile_downloader(tc.tiles, maptile.dbsess())
   monitor(w, 2, td, 'Downloading', 15, erry=3)
 
   try:

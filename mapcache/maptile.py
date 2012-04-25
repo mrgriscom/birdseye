@@ -50,10 +50,19 @@ class Tile(Base):
                 suffix = ''
         return mkpath(suffix)
 
-def dbsess(connector=settings.TILE_DB):
-    engine = create_engine(connector)
+def dbsess(connector=settings.TILE_DB, echo=False):
+    engine = create_engine(connector, echo=echo)
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine)()
+
+def get_descendants(sess, zoom, x, y, min_depth=None, max_depth=None):
+    qt = u.to_quadindex(zoom, x, y)
+    q = sess.query(Tile).filter(Tile.qt > qt).filter(Tile.qt < (qt + '4'))
+    if min_depth:
+        q = q.filter(Tile.z >= zoom + min_depth)
+    if max_depth:
+        q = q.filter(Tile.z <= zoom + max_depth)
+    return q
 
 
 
@@ -213,9 +222,6 @@ def quad_children(x, y):
     for xo in range(2):
         for yo in range(2):
             yield (2 * x + xo, 2 * y + yo)
-
-
-
 
 class RegionTessellation(object):
     def __init__(self, polygon, max_zoom, offset=1.):

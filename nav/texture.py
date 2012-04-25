@@ -2,6 +2,7 @@ from Image import *
 import os
 import ImageEnhance
 from mapcache import mapdownloader
+from mapcache import maptile
 import settings
 import sys
 
@@ -64,23 +65,19 @@ conn = None
 def tile_file (mode, zoom, x, y):
   global conn
   if conn == None:
-    conn = mapdownloader.dbconn()
+    conn = maptile.dbsess()
 
-  curs = conn.cursor()
-  vals = dict(z=zoom, x=x, y=y, type=1 if mode == 'map' else 2)
-  curs.execute('select uuid from tiles where (z, x, y, type) = (%(z)s, %(x)s, %(y)s, %(type)s);', vals) 
-  if curs.rowcount > 0:
-    uuid = curs.fetchall()[0][0]
-  else:
-    return None
+  layer = {
+    'map': 'gmap-map',
+  }[mode]
+  t = conn.query(maptile.Tile).get((layer, zoom, x, y))
+  return t.path() if t else None
 
-
-def get_tile(sess, z, x, y, type):
-    t = sess.query(Tile).get((z, x, y, type))
+def get_tile(sess, z, x, y, layer):
+    t = sess.query(maptile.Tile).get((layer, z, x, y))
     if t:
-        path = uuid_path(t.uuid)
         import __builtin__
-        with __builtin__.open(path) as f:
+        with __builtin__.open(t.path()) as f:
             return f.read()
     else:
         return None

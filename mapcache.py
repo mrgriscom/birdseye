@@ -123,52 +123,53 @@ def check_unsupported (args):
       error_out('Delete/trim not supported')
 
 def db_validate (args):
-  try:
-    conn = psycopg2.connect(database=settings.TILE_DB.split('/')[-1])
-    curs = conn.cursor()
-  except:
-    error_out('can\'t connect to database')
+    pass
+#  try:
+#    conn = psycopg2.connect(database=settings.TILE_DB.split('/')[-1])
+#    curs = conn.cursor()
+#  except:
+#    error_out('can\'t connect to database')
 
   #fetch/store region for name
-  curs.execute("select id from regions where name = '%s';" % args['name'])
-  if 'region' in args:
-    if curs.rowcount > 0:
-      error_out('region name already taken')
+#  curs.execute("select id from regions where name = '%s';" % args['name'])
+#  if 'region' in args:
+#    if curs.rowcount > 0:
+#      error_out('region name already taken')
 
-    curs.execute('insert into regions (name, boundary, created_on) values (%(name)s, %(poly)s, %(now)s);',
-                 dict(name=args['name'], poly=str(args['region'].contour(0)), now=datetime.utcnow()))
-  else:
-    if curs.rowcount == 0:
-      error_out('no region defined by that name')
+#    curs.execute('insert into regions (name, boundary, created_on) values (%(name)s, %(poly)s, %(now)s);',
+#                 dict(name=args['name'], poly=str(args['region'].contour(0)), now=datetime.utcnow()))
+#  else:
+#    if curs.rowcount == 0:
+#      error_out('no region defined by that name')
 
-    curs.execute("select boundary from regions where name = '%s';" % args['name'])
-    args['region'] = Polygon(eval(curs.fetchall()[0][0]))
-  conn.commit()
+#    curs.execute("select boundary from regions where name = '%s';" % args['name'])
+#    args['region'] = Polygon(eval(curs.fetchall()[0][0]))
+#  conn.commit()
 
-  curs.execute("select id from regions where name = '%s';" % args['name'])
-  region_id = curs.fetchall()[0][0]
+#  curs.execute("select id from regions where name = '%s';" % args['name'])
+#  region_id = curs.fetchall()[0][0]
 
   #per layer, update overlay info
-  for (layername, layerinfo) in args['layers'].iteritems():
-    curs.execute("select id from overlays where name = '%s';" % layername)
-    if curs.rowcount == 0:
-      print 'unrecognized overlay [%s]' % layername
-    else:
-      ovl_id = curs.fetchall()[0][0]
+#  for (layername, layerinfo) in args['layers'].iteritems():
+#    curs.execute("select id from overlays where name = '%s';" % layername)
+#    if curs.rowcount == 0:
+#      print 'unrecognized overlay [%s]' % layername
+#    else:
+#      ovl_id = curs.fetchall()[0][0]
 
-      curs.execute('select depth from region_overlays where (region_id, overlay_id) = (%(reg)s, %(ovl)s);',
-                   dict(reg=region_id, ovl=ovl_id))
-      if curs.rowcount == 0:
-        curs.execute('insert into region_overlays (region_id, overlay_id, depth) values (%(reg)s, %(ovl)s, %(dep)s);',
-                     dict(reg=region_id, ovl=ovl_id, dep=layerinfo['zoom']))
-      else:
-        depth = curs.fetchall()[0][0]
-        if depth < layerinfo['zoom']:        
-          curs.execute('update region_overlays set depth = %(dep)s where (region_id, overlay_id) = (%(reg)s, %(ovl)s);',
-                       dict(reg=region_id, ovl=ovl_id, dep=layerinfo['zoom']))
-      conn.commit()
+#      curs.execute('select depth from region_overlays where (region_id, overlay_id) = (%(reg)s, %(ovl)s);',
+#                   dict(reg=region_id, ovl=ovl_id))
+#      if curs.rowcount == 0:
+#        curs.execute('insert into region_overlays (region_id, overlay_id, depth) values (%(reg)s, %(ovl)s, %(dep)s);',
+#                     dict(reg=region_id, ovl=ovl_id, dep=layerinfo['zoom']))
+#      else:
+#        depth = curs.fetchall()[0][0]
+#        if depth < layerinfo['zoom']:        
+#          curs.execute('update region_overlays set depth = %(dep)s where (region_id, overlay_id) = (%(reg)s, %(ovl)s);',
+#                       dict(reg=region_id, ovl=ovl_id, dep=layerinfo['zoom']))
+#      conn.commit()
 
-  conn.close()
+#  conn.close()
 
 
 

@@ -11,7 +11,8 @@ from tornado.template import Template
 import logging
 import os
 
-import nav.texture as tiles
+from mapcache import maptile
+import nav.texture
 
 class TileHandler(web.RequestHandler):
     def initialize(self, dbsess):
@@ -22,16 +23,20 @@ class TileHandler(web.RequestHandler):
         x = self.get_argument('x')
         y = self.get_argument('y')
 
-        content = tiles.get_tile(self.sess, z, x, y, 1)
+        content = nav.texture.get_tile(self.sess, z, x, y, 'gmap-map')
         if content:
             self.set_header("Content-Type", "image/png")
             self.write(content)
         else:
-            self.set_status(404)
+            self.set_header("Content-Type", "image/png")
+            with open('/home/drew/tmp/overlay.png') as f:
+                self.write(f.read())
+
+#            self.set_status(404)
 
 if __name__ == "__main__":
 
-    sess = tiles.dbsess()
+    sess = maptile.dbsess()
 
     application = web.Application([
         (r'/tile', TileHandler, {'dbsess': sess}),
