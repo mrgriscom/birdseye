@@ -2,10 +2,14 @@ import logging
 import logging.handlers
 
 # database connector for tile info
-TILE_DB = 'postgresql:///navdata'
+TILE_DB = 'postgresql:///tiles'
 
 # root directory where tiles are stored
 TILE_ROOT = '/home/drew/tiles/'
+# how to clump tiles into directory buckets (shouldn't have too many
+# entries in any one directory)
+# [2, 4]: '53392f0a.jpg' => '53/5339/53392f0a.jpg'
+TILE_BUCKETS = [3]
 
 # gps device
 GPS_DEVICE = '/dev/ttyUSB0'
@@ -30,6 +34,17 @@ GPS_LOG_DB = 'postgresql:///geoloc'
 
 # measurement units
 UNITS = 'us' # 'us' or 'metric'
+
+LAYERS = {
+#    'layername': {
+#        'tile_url': 'http://mapserver/tile?x={x}&y={y}&z={z}',
+#        'file_type': 'png',
+#    }
+}
+
+
+
+
 
 # logging config
 LOGFILE = '/tmp/birdseye.log'

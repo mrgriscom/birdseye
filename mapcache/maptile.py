@@ -1,6 +1,63 @@
 import math
 from Polygon import *
 import bisect
+import util.util as u
+import settings
+import os.path
+from glob import glob
+
+from sqlalchemy import create_engine, Column, DateTime, Integer, String, CheckConstraint
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.sql.expression import func
+
+Base = declarative_base()
+class Tile(Base):
+    __tablename__ = 'tiles'
+
+    layer = Column(String, primary_key=True)
+    z = Column(Integer, CheckConstraint('z >= 0'), primary_key=True)
+    x = Column(Integer, primary_key=True)
+    y = Column(Integer, primary_key=True)
+
+    qt = Column(String, nullable=False, index=True)
+    uuid = Column(String, nullable=False, index=True)
+
+    fetched_on = Column(DateTime, default=func.now())
+
+    __table_args__ = (
+        CheckConstraint('x >= 0 and x < 2^z'),
+        CheckConstraint('y >= 0 and y < 2^z'),
+    )
+
+    def __init__(self, **kw):
+        kw['qt'] = u.to_quadindex(kw['z'], kw['x'], kw['y'])
+        super(Tile, self).__init__(**kw)
+
+    def path(self, suffix=None):
+        bucket = os.path.join(settings.TILE_ROOT, *(self.uuid[:k] for k in settings.TILE_BUCKETS))
+        def mkpath(suffix):
+            return os.path.join(bucket, '%s.%s' % (self.uuid, suffix))
+
+        if not suffix:
+            layer = settings.LAYERS.get(self.layer)
+            if layer:
+                suffix = layer.get('file_type')
+        if not suffix:
+            try:
+                return glob(mkpath('*'))[0]
+            except IndexError:
+                suffix = ''
+        return mkpath(suffix)
+
+def dbsess(connector=settings.TILE_DB):
+    engine = create_engine(connector)
+    Base.metadata.create_all(engine)
+    return sessionmaker(bind=engine)()
+
+
+
+
 
 def ll_to_mercator((lat, lon)):
     """project lat/lon position (in degrees) to mercator lon/lat
