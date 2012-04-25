@@ -240,3 +240,9 @@ def format_interval(interval, expand=True, max_unit=None, sep='', labels={}, pad
         return '%s%s' % (('%d' if first or not pad else '%02d') % val, label)
 
     return sep.join(format_field(f, t[f], i == 0) for i, f in enumerate(disp))
+
+def clip(x, _min=None, _max=None):
+    """limit x at min and max, if defined"""
+    limit = lambda f, k, lim: f(k, lim) if lim is not None else k
+    return limit(min, limit(max, x, _min), _max)
+

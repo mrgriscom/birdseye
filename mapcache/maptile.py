@@ -32,35 +32,29 @@ def tilef_to_xy(p, zoom):
     """inverse of xy_to_tilef"""
     return tuple([c / 2.**zoom for c in p])
 
-def calc_scale_brackets(limit=math.pi):
-    """Generate the list of mercator y-coordiantes at which linear distortion
+def calc_scale_brackets(offset=1., limit=math.pi):
+    """generate the list of mercator y-coordiantes at which linear distortion
     reaches successive powers of 2. y[i] is point at which scale is 2^(i+1)*equator,
-    List is theoretically infinite, but stop at last value less than limit
+    list is theoretically infinite, but stop at last value less than limit
     (default: edge of quadtree plane (~85.05 degrees latitude))"""
-    disconts = []
+    # TODO document 'offset'
+    if offset <= 0. or offset > 1.:
+        raise ValueError('offset must be in (0, 1]')
 
-    disc_merc = 0
-    while disc_merc < limit:
-        disc_lat = math.degrees(math.acos(1. / 2.**(len(disconts) + 1)))
+    i = 0
+    while True:
+        disc_lat = math.degrees(math.acos(1. / 2.**(i + offset)))
         disc_merc = ll_to_mercator((disc_lat, 0))[1]
-        disconts.append(disc_merc)
+        if disc_merc >= limit:
+            break
+        yield disc_merc
+        i += 1
 
-    return disconts[0:-1]
-
-scale_brackets = None
-def init_scale_brackets():
-    """Initialize scale brackets global variable"""
-    global scale_brackets
-    if scale_brackets == None:
-        scale_brackets = calc_scale_brackets()
-
-def zoom_adjust(zoom, y):
-    """Calculate the zoom level difference, for the given y-tile and zoom level,
+def zoom_adjust(scale_brackets, zoom, y):
+    """calculate the zoom level difference, for the given y-tile and zoom level,
     that gives the same effective scale as at the equator"""
-    init_scale_brackets()
-
-    #consider closest point on tile to equator (least distortion -- err on
-    #side of higher resolution)
+    # consider closest point on tile to equator (least distortion -- err on
+    # side of higher resolution)
     if zoom == 0:
         yr = 0.5
     else:
@@ -71,39 +65,42 @@ def zoom_adjust(zoom, y):
     merc_y = abs(xy_to_mercator(tilef_to_xy((0., yr), zoom))[1])
     return bisect.bisect_right(scale_brackets, merc_y)
 
-def bracket(x, min=None, max=None):
-    """Limit x at min and max, if defined"""
-    if min != None and x < min:
-        return min
-    elif max != None and x > max:
-        return max
-    else:
-        return x
-
-def max_y_for_zoom(zoom, max_zoom):
-    """Return the minimum and maximum y-tiles at the given zoom level for which the
+def max_y_for_zoom(scale_brackets, zoom, max_zoom):
+    """return the minimum and maximum y-tiles at the given zoom level for which the
     effective scale will not exceed the maximum zoom level"""
-    init_scale_brackets()
-
     zdiff = max_zoom - zoom
     if zdiff < 0:
         mid = 2**(zoom - 1)
         return (mid, mid - 1)
  
     max_merc_y = scale_brackets[zdiff] if zdiff < len(scale_brackets) else math.pi
-    ybounds = [xy_to_tile(mercator_to_xy((0, s*max_merc_y)), zoom)[1] for s in (1, -1)]
-    return tuple([bracket(y, 0, 2**zoom - 1) for y in ybounds]) #needed to fix y=-pi,
-            #but also a sanity check
+    ybounds = [xy_to_tile(mercator_to_xy((0, s * max_merc_y)), zoom)[1] for s in (1, -1)]
+    return tuple(u.clip(y, 0, 2**zoom - 1) for y in ybounds) #needed to fix y=-pi, but also a sanity check
 
+class MercZoom(object):
+    def __init__(self, offset=1.):
+        self.scale_brackets = list(calc_scale_brackets(offset))
 
+    def adjust(self, zoom, y):
+        return zoom_adjust(self.scale_brackets, zoom, y)
 
+    def max_y(self, zoom, max_zoom):
+        return max_y_for_zoom(self.scale_brackets, zoom, max_zoom)
+
+    def extents(self, max_zoom):
+        """return the minimum and maximum y-tiles that should be fetched at each zoom
+        level, so as to not exceed the effective scale of the max zoom level. return
+        list such that list[zoom_level] = (min_y, max_y). List will have entries for
+        all zoom levels from 0 to max_zoom + 1 (the range for max_zoom + 1 will be
+        empty)"""
+        return [self.max_y(z, max_zoom) for z in range(0, max_zoom + 2)] 
 
 
 
 
 
 def tile(polygon, scale_extents, zoom, (x, y)):
-    """Recursively enumerate tiles overlapping the polygon"""
+    """recursively enumerate tiles overlapping the polygon"""
     if not within_extent(scale_extents, zoom, y):
         return
 
@@ -127,16 +124,16 @@ def fill_in(scale_extents, root_zoom, (x, y)):
     tiles up to the terminating zoom level"""
     z = root_zoom + 1
 
-    empty = False
-    while not empty:
+    while True:
         zdiff = z - root_zoom
         (xmin, xmax) = [(x + xo) * 2**zdiff for xo in [0, 1]]
         (ymin, ymax) = [(y + yo) * 2**zdiff for yo in [0, 1]]
 
-        (ymin2, ymax2) = scale_extents[z]
-        ymin = max(ymin, ymin2)
-        ymax = min(ymax, ymax2 + 1)
-        empty = (ymin >= ymax)
+        (ext_ymin, ext_ymax) = scale_extents[z]
+        ymin = max(ymin, ext_ymin)
+        ymax = min(ymax, ext_ymax + 1)
+        if ymin >= ymax:
+            break
 
         for ty in range(ymin, ymax):
             for tx in range(xmin, xmax):
@@ -145,61 +142,54 @@ def fill_in(scale_extents, root_zoom, (x, y)):
         z += 1
 
 def within_extent(scale_extents, z, y):
-    """Return whether the y-tile falls within the desired range at this zoom level"""
+    """return whether the y-tile falls within the desired range at this zoom level"""
     (ymin, ymax) = scale_extents[z]
     return y >= ymin and y <= ymax
 
-def calc_scale_extents(max_zoom):
-    """Return the minimum and maximum y-tiles that should be fetched at each zoom
-    level, so as to not exceed the effective scale of the max zoom level. Return
-    list such that list[zoom_level] = (min_y, max_y). List will have entries for
-    all zoom levels from 0 to max_zoom + 1 (the range for max_zoom + 1 will be
-    empty)"""
-    return [max_y_for_zoom(z, max_zoom) for z in range(0, max_zoom + 2)] 
-
 def quadrant(xmin, xmax, ymin, ymax):
+    """generate a polygon for the rectangle with the given bounds"""
     return Polygon([(xmin, ymin), (xmax, ymin), (xmax, ymax), (xmin, ymax)])
 
 def quad_children(x, y):
-    """For a given tile, return its 4 constituent children at the next zoom
+    """for a given tile, generate the 4 constituent children at the next zoom
     level"""
-    return [(2 * x + xo, 2 * y + yo) for xo in [0, 1] for yo in [0, 1]]
+    for xo in range(2):
+        for yo in range(2):
+            yield (2 * x + xo, 2 * y + yo)
 
 
 
 
 class RegionTessellation(object):
-    def __init__(self, polygon, max_zoom):
+    def __init__(self, polygon, max_zoom, offset=1.):
         self.polygon = polygon
         self.max_zoom = max_zoom
+        self._z = MercZoom(offset)
 
     def __iter__(self):
         return self.next()
 
     def next(self):
-        for t in tile(self.polygon, calc_scale_extents(self.max_zoom), 0, (0, 0)):
+        for t in tile(self.polygon, self._z.extents(self.max_zoom), 0, (0, 0)):
             yield t
 
-    #replace with an alternate method that generates new polygons with a 'fuzz' threshold
-    #(.5 * tile size) and computes area exactly (no fudge)
     def size_estimate(self, compensate=True):
-        init_scale_brackets()
+        # this method is pretty kludgey. better method: generate new polygons with
+        # .5*tile radius 'fuzz' (at each zoom level), and compute/sum exact areas
 
-        ymins = [max(mercator_to_xy((0, y))[1], 0.) for y in scale_brackets]
+        ymins = [max(mercator_to_xy((0, y))[1], 0.) for y in self._z.scale_brackets]
         base_area = self.polygon.area()
 
-        z_areas = []
-        for z in range(0, self.max_zoom + 1):
-            if z <= self.max_zoom - len(ymins):
-                area = base_area
-            else:
-                ymin = ymins[self.max_zoom - z]
-                sub_poly = self.polygon & quadrant(0., 1., ymin, 1. - ymin)
-                area = sub_poly.area()
-            z_areas.append(area)
-
-        z_tiles = [area * 4**z for (z, area) in enumerate(z_areas)]
-        total = sum([math.ceil(t) for t in z_tiles])
+        def z_areas():
+            for z in range(0, self.max_zoom + 1):
+                if z <= self.max_zoom - len(ymins):
+                    yield base_area
+                else:
+                    ymin = ymins[self.max_zoom - z]
+                    sub_poly = self.polygon & quadrant(0., 1., ymin, 1. - ymin)
+                    yield sub_poly.area()
+        z_tiles = (area * 4**z for (z, area) in enumerate(z_areas()))
+        total = sum(math.ceil(t) for t in z_tiles)
 
         #compensate for underestimation
         fudge = min(5. / math.sqrt(total), 0.75) if compensate else 0.
