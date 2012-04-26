@@ -6,7 +6,7 @@ import settings
 import os.path
 from glob import glob
 
-from sqlalchemy import create_engine, Column, DateTime, Integer, String, CheckConstraint
+from sqlalchemy import create_engine, Column, DateTime, Integer, String, ForeignKey, CheckConstraint, Index
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.sql.expression import func
@@ -20,14 +20,15 @@ class Tile(Base):
     x = Column(Integer, primary_key=True)
     y = Column(Integer, primary_key=True)
 
-    qt = Column(String, nullable=False, index=True)
+    qt = Column(String, nullable=False)
     uuid = Column(String, nullable=False, index=True)
 
-    fetched_on = Column(DateTime, default=func.now())
+    fetched_on = Column(DateTime, default=func.now(), onupdate=func.now())
 
     __table_args__ = (
         CheckConstraint('x >= 0 and x < 2^z'),
         CheckConstraint('y >= 0 and y < 2^z'),
+        Index('qt', layer, qt),
     )
 
     def __init__(self, **kw):
@@ -35,7 +36,7 @@ class Tile(Base):
         super(Tile, self).__init__(**kw)
 
     def path(self, suffix=None):
-        bucket = os.path.join(settings.TILE_ROOT, *(self.uuid[:k] for k in settings.TILE_BUCKETS))
+        bucket = list(self.path_intermediary()[-1])
         def mkpath(suffix):
             return os.path.join(bucket, '%s.%s' % (self.uuid, suffix))
 
@@ -49,6 +50,53 @@ class Tile(Base):
             except IndexError:
                 suffix = ''
         return mkpath(suffix)
+
+    def path_intermediary(self):
+        for i in range(len(settings.TILE_BUCKETS)):
+            yield os.path.join(settings.TILE_ROOT, *(self.uuid[:k] for k in settings.TILE_BUCKETS[:i+1]))
+
+    def save(self, data, file_type, hashfunc):
+        self.uuid = hashfunc(data)
+        if data is None:
+            return True
+
+        for ipath in self.path_intermediary():
+            if not os.path.exists(ipath):
+                os.mkdir(ipath)
+
+        path = self.path(file_type)
+        if not os.path.exists(path):
+            try:
+                with open(path, 'w') as f:
+                    f.write(data)
+            except IOError:
+                return False
+        return True
+
+class Region(Base):
+    __tablename__ = 'regions'
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False, unique=True)
+    boundary = Column(String, nullable=False)
+
+    def __init__(self, name, coords):
+        super(Region, self).__init__(**{
+            'name': name,
+            'boundary': ' '.join('%s,%s' % c for c in coords),
+        })
+
+    def poly(self):
+        return Polygon([tuple(float(k) for k in c.split(',')) for c in self.boundary.split()])
+
+class RegionOverlay(Base):
+    __tablename__ = 'region_overlays'
+
+    region = Column(Integer, ForeignKey('regions.id'), primary_key=True)
+    layer = Column(String, primary_key=True)
+    depth = Column(Integer, nullable=False)
+
+    created_on = Column(DateTime, default=func.now())
 
 def dbsess(connector=settings.TILE_DB, echo=False):
     engine = create_engine(connector, echo=echo)

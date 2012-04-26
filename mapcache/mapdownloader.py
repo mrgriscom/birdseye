@@ -10,156 +10,120 @@ import hashlib
 import curses
 import psycopg2
 from Polygon import *
-import maptile
+import maptile as mt
 from downloadmanager import DownloadManager
 import settings
+import util.util as u
+import re
 
 from sqlalchemy.sql.expression import tuple_
 
 HASH_LENGTH = 8 # bytes
-
-
-
+BULK_RESOLUTION = 100
 
 def null_digest():
     return '00' * HASH_LENGTH
 
 def tile_url((zoom, x, y), layer):
-    template
+    L = settings.LAYERS[layer]
+    if '_tileurl' not in L:
+        L['_tileurl'] = precompile_tile_url(L['tile_url'])
+    return L['_tileurl'](zoom, x, y)
 
-    return "http://mt%d.google.com/vt/x=%d&y=%d&z=%d" % ((x + y) % 4, x, y, zoom)
-    #return "http://mt%d.google.com/mt?x=%d&y=%d&z=%d" % ((x + y) % 4, x, y, zoom)
+def precompile_tile_url(template):
+    replacements = {
+        '{z}': '%(z)d',
+        '{x}': '%(x)d',
+        '{y}': '%(y)d',
+        '{qt}': '%(qt)s',
+    }
 
-def query_tiles(conn, chunk, ignore_missing):
-    layer = 'gmap-map'
+    shards = []
+    shard_match = re.search(r'\{s:([^\}]+)\}', template)
+    if shard_match:
+        shard_tag = shard_match.group(0)
+        shard_spec = shard_match.group(1)
 
-    q = conn.query(maptile.Tile).filter(maptile.Tile.layer == layer).filter(tuple_(maptile.Tile.z, maptile.Tile.x, maptile.Tile.y).in_(list(chunk)))
+        if '-' in shard_spec:
+            min, max = (int(k) for k in shard_spec.split('-'))
+            shards = range(min, max + 1)
+        else:
+            shards = list(shard_spec)
+        replacements[shard_tag] = '%(shard)s'
+
+    has_qt = '{qt}' in template
+
+    fmtstr = reduce(lambda s, (old, new): new.join(s.split(old)), replacements.iteritems(), template)
+    def _url(z, x, y):
+        if shards:
+            shard = shards[(x + y) % len(shards)]
+        if has_qt:
+            qt = u.to_quadindex(z, x, y)
+        return fmtstr % locals()
+    return _url
+
+def query_tiles(sess, layer, chunk, ignore_missing):
+    q = conn.query(mt.Tile).filter(mt.Tile.layer == layer).filter(tuple_(mt.Tile.z, mt.Tile.x, mt.Tile.y).in_(list(chunk)))
     if ignore_missing:
-        q = q.filter(maptile.Tile.uuid != null_digest())
-
+        q = q.filter(mt.Tile.uuid != null_digest())
     return set((t.z, t.x, t.y) for t in q)
 
-def chunker(container, chunk_size):
-    chunk = []
-    for v in container:
-        chunk.append(v)
-
-        if len(chunk) == chunk_size:
-            yield chunk
-            chunk = []
-    if chunk:
-        yield chunk
-
-def existing_tiles(conn, tiles, ignore_missing=False, chunk_size=100):
-    for chunk in chunker(tiles, chunk_size):
-        yield (query_tiles(conn, chunk, ignore_missing), len(chunk))
-
-def filter_set(s, filter, remove=True):
-    t = set()
-    for e in s:
-        if filter(e):
-            t.add(e)
-    if remove:
-        for e in t:
-            s.remove(e)
-    return t
-
-def rand_elem(s):
-    r = random.randint(0, len(s) - 1)
-    for (i, e) in enumerate(s):
-        if i == r:
-            return e
-
-def max_elem(s, val=lambda x: x):
-    max_val = None
-    results = []
-    for e in s:
-        val_e = val(e)
-        if max_val == None or val_e > max_val:
-            results = [e]
-            max_val = val_e
-        elif val_e == max_val:
-            results.append(e)
-    return results
-
-def manhattan_dist((x0, y0), (x1, y1)):
-    return abs(x0 - x1) + abs(y0 - y1)
+def existing_tiles(sess, tiles, ignore_missing=False, chunk_size=BULK_RESOLUTION):
+    for chunk in u.chunker(tiles, chunk_size):
+        yield (query_tiles(sess, chunk, ignore_missing), len(chunk))
 
 def random_walk_level(tiles, window=10):
     target = None
     while tiles:
         if not target:
-            target = rand_elem(tiles)
+            target = u.rand_elem(tiles)
         else:
-            candidates = max_elem(tiles, lambda t: -manhattan_dist(target[1:3], t[1:3]))
+            metric = lambda t: u.manhattan_dist(target[1:], t[1:])
+            closest = min(metric(t) for t in tiles)
+            candidates = [t for t in tiles if metric(t) == closest]
             target = random.choice(candidates)
 
-        (xmin, ymin) = [f - window / 2 for f in target[1:3]]
+        (xmin, ymin) = [f - window / 2 for f in target[1:]]
         (xmax, ymax) = [f + window - 1 for f in (xmin, ymin)]
 
-        swatch = list(filter_set(tiles, lambda (z, x, y): x >= xmin and x <= xmax and y >= ymin and y <= ymax))
+        swatch = list(filter_set(tiles, lambda z, x, y: x >= xmin and x <= xmax and y >= ymin and y <= ymax))
         random.shuffle(swatch)
         for t in swatch:
             yield t
 
 def random_walk(tiles):
-    zooms = [z for (z, count) in enumerate(tile_counts(tiles)) if count > 0]
+    zooms = sorted(set(z for z, x, y in tiles))
     for zoom in zooms:
-        for t in random_walk_level(filter_set(tiles, lambda (z, x, y): z == zoom)):
+        for t in random_walk_level(filter_set(tiles, lambda z, x, y: z == zoom)):
             yield t
 
-# TODO use path calc from Tile object
-def save_tile(data, digest):
-    path = settings.TILE_ROOT
-    if path[-1] != '/':
-        path += '/'
-
-    #buckets = [2, 4]
-    buckets = [3]
-    for i in buckets:
-        path += digest[:i] + '/'
-        if not os.path.exists(path):
-            os.mkdir(path)
-
-    path += digest + '.png'
-    if not os.path.exists(path):
-        try:
-            f = open(path, 'w')
-            f.write(data)
-            f.close()
-        except IOError:
-            return False
-    return True
-
-c = 0 #debug
 def register_tile(conn, tile, digest):
     # TODO: handle refreshing a tile (update uuid, fetched_on)
 
     z, x, y = tile
-    t = maptile.Tile(z=z, x=x, y=y, layer='gmap-map', uuid=digest)
+    t = mt.Tile(z=z, x=x, y=y, layer='gmap-map', uuid=digest)
 
     conn.add(t)
     conn.commit() # TODO: only commit every N?
 
 def process_tile(conn, tile, status, data):
+    def digest(data):
+        if data is not None:
+            return hashlib.sha1(data).hexdigest()[:HASH_LENGTH*2]
+        else:
+            return null_digest()
+
     if status in [httplib.OK, httplib.NOT_FOUND]:
         if status == httplib.OK:
-            #tst1 = time.time() #debug
 
-            digest = hashlib.sha1(data).hexdigest()[0:HASH_LENGTH*2]
             save_result = save_tile(data, digest)
  
-            #ted1 = time.time() #debug
-
             if not save_result:
                 return (False, '%s: could not write file' % str(tile))
         else:
             digest = null_digest()
-#        tst2 = time.time() #debug
         register_tile(conn, tile, digest)
-#        ted2 = time.time() #debug
 
-#        sys.stderr.write('process: %f %f\n' % (ted1-tst1 if ted1 != None else -1, ted2-tst2)) #debug
         return (True, None)
     else:
         if status == None:
@@ -171,6 +135,7 @@ def process_tile(conn, tile, status, data):
         return (False, msg)
 
 def tile_counts(tiles):
+    # todo use map-reduce
     def accumulate(totals, tile):
         z = tile[0]
         if z not in totals:
@@ -188,7 +153,7 @@ class tile_enumerator (threading.Thread):
     def __init__    (self, region, depth):
         threading.Thread.__init__(self)
 
-        self.tess = maptile.RegionTessellation(region, depth)
+        self.tess = mt.RegionTessellation(region, depth)
         self.est_num_tiles = self.tess.size_estimate()
         self.tiles = set()
         self.count = 0
@@ -302,19 +267,19 @@ def download(region, overlay, max_depth, refresh_mode):
     curses.wrapper(download_curses, region, overlay, max_depth, refresh_mode)
 
 def download_curses(w, region, overlay, max_depth, refresh_mode):
-    polygon = Polygon([maptile.mercator_to_xy(maptile.ll_to_mercator(p)) for p in region.contour(0)])
+    polygon = Polygon([mt.mercator_to_xy(mt.ll_to_mercator(p)) for p in region.contour(0)])
  
     te = tile_enumerator(polygon, max_depth)
     monitor(w, 0, te, 'Enumerating', 15, 3)
 
     print_tile_counts(w, tile_counts(te.tiles), 'Tiles in region', 4, 2, max_depth=max_depth)
 
-    tc = tile_culler(te.tiles, refresh_mode, maptile.dbsess())
+    tc = tile_culler(te.tiles, refresh_mode, mt.dbsess())
     monitor(w, 1, tc, 'Culling', 15)
 
     print_tile_counts(w, tile_counts(tc.tiles), 'Tiles to download', 4, 19, max_depth=max_depth)
 
-    td = tile_downloader(tc.tiles, maptile.dbsess())
+    td = tile_downloader(tc.tiles, mt.dbsess())
     monitor(w, 2, td, 'Downloading', 15, erry=3)
 
     try:

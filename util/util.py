@@ -3,6 +3,7 @@ import collections
 from datetime import datetime, timedelta
 import operator
 import itertools
+import random
 
 EPSILON = 1.0e-9
 
@@ -245,4 +246,30 @@ def clip(x, _min=None, _max=None):
     """limit x at min and max, if defined"""
     limit = lambda f, k, lim: f(k, lim) if lim is not None else k
     return limit(min, limit(max, x, _min), _max)
+
+def chunker(it, size):
+    chunk = []
+    for v in it:
+        chunk.append(v)
+        if len(chunk) == size:
+            yield chunk
+            chunk = []
+    if chunk:
+        yield chunk
+
+def set_filter(s, filter, remove=True):
+    t = set(e for e in s if filter(e))
+    if remove:
+        for e in t:
+            s.remove(e)
+    return t
+
+def rand_elem(s):
+    r = random.randint(0, len(s) - 1)
+    for i, e in enumerate(s):
+        if i == r:
+            return e
+
+def manhattan_dist((x0, y0), (x1, y1)):
+    return abs(x0 - x1) + abs(y0 - y1)
 
