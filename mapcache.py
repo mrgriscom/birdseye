@@ -2,9 +2,8 @@ import sys
 import yaml
 import re
 from Polygon import *
-import psycopg2
 from datetime import datetime
-from mapcache import mapdownloader
+from mapcache import mapdownload
 import settings
 
 def error_out (msg):
@@ -170,6 +169,96 @@ def db_validate (args):
 #      conn.commit()
 
 #  conn.close()
+
+
+
+
+def download(region, overlay, max_depth, refresh_mode):
+    curses.wrapper(download_curses, region, overlay, max_depth, refresh_mode)
+
+def download_curses(w, region, overlay, max_depth, refresh_mode):
+    polygon = Polygon([mt.mercator_to_xy(mt.ll_to_mercator(p)) for p in region.contour(0)])
+ 
+    te = tile_enumerator(polygon, max_depth)
+    monitor(w, 0, te, 'Enumerating', 15, 3)
+
+    print_tile_counts(w, tile_counts(te.tiles), 'Tiles in region', 4, 2, max_depth=max_depth)
+
+    tc = tile_culler(te.tiles, refresh_mode, mt.dbsess())
+    monitor(w, 1, tc, 'Culling', 15)
+
+    print_tile_counts(w, tile_counts(tc.tiles), 'Tiles to download', 4, 19, max_depth=max_depth)
+
+    td = tile_downloader(tc.tiles, mt.dbsess())
+    monitor(w, 2, td, 'Downloading', 15, erry=3)
+
+    try:
+        while True:
+            pass
+    except KeyboardInterrupt:
+        pass
+
+def monitor(w, y, thread, caption, width, sf=0, erry=None):
+    thread.start()
+    while thread.isAlive():
+        update_status(w, thread, False, y, caption, width, sf, erry)
+        time.sleep(.01)
+    update_status(w, thread, True, y, caption, width, sf, erry)
+
+def update_status(w, thread, done, y, caption, width, sf, erry):
+    println(w, status(caption, thread.status(), width, sf if not done else 0), y)
+ 
+    if erry != None:
+        err = get_error(thread)
+        if err:
+            println(w, err, erry, 2)
+
+def get_error(thread):
+    try:
+        return thread.errors.get(False)
+    except Queue.Empty:
+        return None
+
+def println(w, str, y, x=0):
+    w.addstr(y, x, str)
+    w.clrtoeol()
+    w.refresh()
+
+def status(caption, (k, n, e), width=None, est_sigfig=0):
+    width = width if width else len(caption)
+
+    ratio = float(k) / n if n > 0 else 1.
+    overflow = ratio > 1.
+    ratio = min(ratio, 1.)
+
+    if est_sigfig > 0:
+        digits = int(math.ceil(math.log10(n)))
+        trunc = max(digits - est_sigfig, 0)
+        n = int(round(n, -trunc))
+        max_str = '%d (est)' % n
+    else:
+        max_str = '%d' % n
+
+    pad = len(str(n))
+    errstr = '         [Errors: %4d]' % e if e > 0 else ''
+    return '%s %s%6.2f%% [%*d/%s]%s' % ((caption + ':').ljust(width + 1), '+' if overflow else ' ',
+            100. * ratio, pad, k, max_str, errstr)
+
+def print_tile_counts(w, counts, header, y, x, width=None, zheader='Zoom', max_depth=None):
+    if not width:
+        width = max(len(header), 10)
+    zwidth = len(zheader)
+
+    maxz = max(len(counts), max_depth + 1 if max_depth != None else 0)
+
+    w.addstr(y, 0, zheader)
+    w.addnstr(y, zwidth + x, header.rjust(width), width)
+    for i in range(0, maxz):
+        w.addstr(y + 1 + i, 0, '%*d' % (zwidth, i))
+        w.addstr(y + 1 + i, zwidth + x, '%*d' % (width, counts[i] if i < len(counts) else 0))
+
+    w.refresh()
+
 
 
 

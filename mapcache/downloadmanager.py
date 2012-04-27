@@ -4,6 +4,11 @@ from Queue import *
 import threading
 import socket
 
+REQUESTS_PER_CONN = 50
+
+# TODO sounds like 'errors' is not really necessary
+# most errors we care about are deduced at a higher level
+
 class DownloadManager ():
   def __init__ (self, terminal_statuses, num_workers=10, num_retries=5, limit=-1, errs=None):
     self.in_queue = Queue(limit)
@@ -40,8 +45,8 @@ class DownloadWorker (threading.Thread):
     self.up = True
     self.errors = errs
 
-    self.connection_request_limit = 50
-    self.useragent = "Mozilla/5.0 (X11; U; Linux i686; en-US) Gecko/20080208 Firefox/2.0.0.13"
+    self.connection_request_limit = REQUESTS_PER_CONN
+    self.useragent = settings.TILE_DL_UA
  
     self.in_queue = in_queue
     self.out_queue = out_queue
@@ -73,6 +78,8 @@ class DownloadWorker (threading.Thread):
       (status, data) = download(url, self.get_connection(host), headers)
       if status in self.terminal_statuses:
         break
+
+    # TODO do something different if we exhaust retries?
 
     #todo: log download
     self.out_queue.put((val, status, data))

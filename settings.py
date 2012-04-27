@@ -35,11 +35,21 @@ GPS_LOG_DB = 'postgresql:///geoloc'
 # measurement units
 UNITS = 'us' # 'us' or 'metric'
 
+TILE_DL_UA = 'Mozilla/5.0 (X11; U; Linux i686; en-US) Gecko/20080208 Firefox/2.0.0.13'
+
 LAYERS = {
 #    'layername': {
 #        'tile_url': 'http://mapserver/tile?x={x}&y={y}&z={z}',
 #        'file_type': 'png',
-#    }
+#        'name': 'sample layer',
+#        'cacheable': True,
+#        'overlay': False,
+#    },
+    'osmmapnik': {
+        'tile_url': 'http://{s:abc}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+        'file_type': 'png',
+        'name': 'openstreetmap standard (mapnik)',
+    },
 }
 
 

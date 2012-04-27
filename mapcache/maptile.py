@@ -58,7 +58,7 @@ class Tile(Base):
     def save(self, data, file_type, hashfunc):
         self.uuid = hashfunc(data)
         if data is None:
-            return True
+            return
 
         for ipath in self.path_intermediary():
             if not os.path.exists(ipath):
@@ -66,12 +66,8 @@ class Tile(Base):
 
         path = self.path(file_type)
         if not os.path.exists(path):
-            try:
-                with open(path, 'w') as f:
-                    f.write(data)
-            except IOError:
-                return False
-        return True
+            with open(path, 'w') as f:
+                f.write(data)
 
 class Region(Base):
     __tablename__ = 'regions'
