@@ -70,7 +70,7 @@ class DownloadWorker(threading.Thread):
             logging.exception('unexpected exception in download worker thread')
 
     def download(self, (key, url)):
-        host = urlparse(url).hostname
+        host = urlparse(url).netloc
         headers = {'User-Agent': self.useragent}
 
         for t in range(self.num_retries):
