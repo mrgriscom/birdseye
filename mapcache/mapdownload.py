@@ -107,9 +107,6 @@ def random_walk(tiles):
             yield t
 
 def register_tile(dbpush, tile, layer, data, hashfunc):
-    # TODO: handle refreshing a tile (update uuid, fetched_on)
-    # TODO: delete old tile if we refresh
-
     z, x, y = tile
     t = mt.Tile(layer=layer, z=z, x=x, y=y)
     t.save(data, hashfunc)
@@ -194,7 +191,6 @@ class TileDownloader(threading.Thread):
 
         self.tiles = tiles
         self.layer = layer
-        self.sess = sess
 
         self.num_tiles = len(tiles)
 
@@ -203,8 +199,9 @@ class TileDownloader(threading.Thread):
 
         self.dlmgr = DownloadManager([httplib.OK, httplib.NOT_FOUND, httplib.FORBIDDEN], limit=100)
 
+        self.dbsess = TileDB(sess, BULK_RESOLUTION)
         def process(key, status, data):
-            return process_tile(self.dbpush, key, self.layer, status, data)
+            return process_tile(self.dbsess.push, key, self.layer, status, data)
         self.dlpxr = DownloadProcessor(self.dlmgr, process, self.num_tiles, self.onerror)
 
     def run(self):
@@ -215,15 +212,10 @@ class TileDownloader(threading.Thread):
             self.dlmgr.enqueue((t, tile_url(t, self.layer)))
 
         self.dlpxr.join()
-        self.sess.commit()
+        self.dbsess.commit()
 
         self.dlmgr.terminate()
         self.dlmgr.join()
-
-    def dbpush(self, tile):
-        self.sess.add(tile)
-        if len(self.sess.new) >= BULK_RESOLUTION:
-            self.sess.commit()
 
     def onerror(self, msg):
         self.error_count += 1
@@ -264,7 +256,36 @@ class DownloadProcessor(threading.Thread):
     def done(self):
         return self.count == (self.num_expected if self.num_expected is not None else -1)
 
+class TileDB(object):
+    def __init__(self, sess, limit=1):
+        self.sess = sess
+        self.limit = limit
 
+        self.old_uuids = set()
 
+    def push(self, tile):
+        existing = self.sess.query(mt.Tile).get((tile.layer, tile.z, tile.x, tile.y))
+        if existing:
+            if existing.uuid != tile.uuid:
+                self.old_uuids.add(existing.uuid)
+                existing.uuid = tile.uuid
+        else:
+            self.sess.add(tile)
+
+        if len(self.sess.new) + len(self.sess.dirty) >= BULK_RESOLUTION:
+            self.commit()
+
+    def commit(self):
+        self.sess.commit()
+
+        for uuid in self.old_uuids:
+            if uuid == null_digest():
+                continue
+
+            if not len(self.sess.query(mt.Tile).filter(uuid=uuid)):
+                # no tile references this file uuid anymore
+                os.path.remove(mt.Tile(uuid=uuid).path())
+
+        self.old_uuids = set()
 
 
