@@ -55,7 +55,7 @@ class Tile(Base):
         for i in range(len(settings.TILE_BUCKETS)):
             yield os.path.join(settings.TILE_ROOT, *(self.uuid[:k] for k in settings.TILE_BUCKETS[:i+1]))
 
-    def save(self, data, file_type, hashfunc):
+    def save(self, data, hashfunc, file_type=None):
         self.uuid = hashfunc(data)
         if data is None:
             return

@@ -106,16 +106,16 @@ def random_walk(tiles):
         for t in random_walk_level(filter_set(tiles, lambda z, x, y: z == zoom)):
             yield t
 
-def register_tile(dbpush, tile, layer, data, mimetype, hashfunc):
+def register_tile(dbpush, tile, layer, data, hashfunc):
     # TODO: handle refreshing a tile (update uuid, fetched_on)
     # TODO: delete old tile if we refresh
 
     z, x, y = tile
     t = mt.Tile(layer=layer, z=z, x=x, y=y)
-    t.save(data, mimetype, hashfunc)
+    t.save(data, hashfunc)
     dbpush(t)
 
-def process_tile(dbpush, tile, layer, status, data, mimetype):
+def process_tile(dbpush, tile, layer, status, data):
     def digest(data):
         if data is not None:
             return hashlib.sha1(data).hexdigest()[:HASH_LENGTH*2]
@@ -124,13 +124,13 @@ def process_tile(dbpush, tile, layer, status, data, mimetype):
 
     if status in [httplib.OK, httplib.NOT_FOUND]:
         try:
-            register_tile(dbpush, tile, layer, data if status == httplib.OK else None, mimetype, digest)
+            register_tile(dbpush, tile, layer, data if status == httplib.OK else None, digest)
             return (True, None)
         except IOError:
             return (False, '%s: could not write file' % str(tile))
     else:
         if status == None:
-            msg = 'Tile %s: unable to download' % str(tile)
+            msg = 'Tile %s: download error %s' % (str(tile), data)
         elif status == httplib.FORBIDDEN:
             msg = 'Warning: we may have been banned'
         else:
@@ -198,8 +198,14 @@ class TileDownloader(threading.Thread):
 
         self.num_tiles = len(tiles)
 
+        self.error_count = 0
+        self.last_error = None
+
         self.dlmgr = DownloadManager([httplib.OK, httplib.NOT_FOUND, httplib.FORBIDDEN], limit=100)
-        self.dlpxr = DownloadProcessor(self.dlmgr.out_queue, lambda i, s, d: process_tile(self.dbpush, i, s, d), self.num_tiles)
+
+        def process(key, status, data):
+            return process_tile(self.dbpush, key, self.layer, status, data)
+        self.dlpxr = DownloadProcessor(self.dlmgr, process, self.num_tiles, self.onerror)
 
     def run(self):
         self.dlmgr.start()
@@ -208,59 +214,55 @@ class TileDownloader(threading.Thread):
         for t in random_walk(self.tiles):
             self.dlmgr.enqueue((t, tile_url(t, self.layer)))
 
-        while not self.dlmgr.done():
-            pass
-        self.dlmgr.terminate()
-
-        while not self.dlpxr.done():
-            pass
-        self.dlpxr.terminate()
         self.dlpxr.join()
+        self.sess.commit()
+
+        self.dlmgr.terminate()
+        self.dlmgr.join()
 
     def dbpush(self, tile):
         self.sess.add(tile)
         if len(self.sess.new) >= BULK_RESOLUTION:
             self.sess.commit()
 
+    def onerror(self, msg):
+        self.error_count += 1
+        self.last_error = msg
+
     def status(self):
         return (self.dlpxr.count, self.num_tiles, self.dlpxr.errcount)
 
 class DownloadProcessor(threading.Thread):
-    def __init__(self, queue, processfunc, num_expected=None, errs=None):
+    def __init__(self, dlmgr, processfunc, num_expected=None, onerror=lambda m: None):
         threading.Thread.__init__(self)
         self.up = True
 
         self.process = processfunc
-        self.queue = queue
-        self.count = 0
+        self.dlmgr = dlmgr
         self.num_expected = num_expected
-        self.errcount = 0
-        self.errors = errs
 
+        self.count = 0
+        self.onerror = onerror
+ 
     def terminate(self):
         self.up = False
 
     def run(self):
-        while self.up:
-            try:
-                (item, status, data) = self.queue.get(True, 0.05)
-                (success, msg) = self.process(item, status, data)
+        try:
+            while self.up and not self.done():
+                item = self.dlmgr.fetch()
+                if not item:
+                    continue
+                
+                success, msg = self.process(*item)
                 self.count += 1
                 if not success:
-                    self.errcount += 1
-                if msg:
-                    self.errors.put(msg)
-            except Queue.Empty:
-                pass
-            except Exception, e:
-                if self.errors != None:
-                    self.errors.put('Unexpected exception in download processor thread: ' + str(e))
+                    self.onerror(msg)
+        except:
+            logging.exception('unexpected exception in download processor thread')
 
     def done(self):
-        if self.num_expected != None:
-            return self.count == self.num_expected
-        else:
-            return self.queue.empty()
+        return self.count == (self.num_expected if self.num_expected is not None else -1)
 
 
 

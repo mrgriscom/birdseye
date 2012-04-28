@@ -1,6 +1,8 @@
 import logging
 import logging.handlers
 
+### DATABASES AND DIRECTORIES
+
 # database connector for tile info
 TILE_DB = 'postgresql:///tiles'
 
@@ -10,6 +12,12 @@ TILE_ROOT = '/home/drew/tiles/'
 # entries in any one directory)
 # [2, 4]: '53392f0a.jpg' => '53/5339/53392f0a.jpg'
 TILE_BUCKETS = [3]
+
+# database connector for tracklog
+GPS_LOG_DB = 'postgresql:///geoloc'
+
+
+### GPS CONFIGURATION
 
 # gps device
 GPS_DEVICE = '/dev/ttyUSB0'
@@ -29,13 +37,8 @@ GPS_BUFFER_WINDOW = 0.3 #seconds
 # class that devices custom behavior for gps device
 GPS_DEVICE_POLICY = 'gps.gpslistener.BU353DevicePolicy'
 
-# database connector for tracklog
-GPS_LOG_DB = 'postgresql:///geoloc'
 
-# measurement units
-UNITS = 'us' # 'us' or 'metric'
-
-TILE_DL_UA = 'Mozilla/5.0 (X11; U; Linux i686; en-US) Gecko/20080208 Firefox/2.0.0.13'
+### MAP LAYERS AND CACHING
 
 LAYERS = {
 #    'layername': {
@@ -51,6 +54,21 @@ LAYERS = {
         'name': 'openstreetmap standard (mapnik)',
     },
 }
+
+TILE_DL_UA = 'Mozilla/5.0 (X11; U; Linux i686; en-US) Gecko/20080208 Firefox/2.0.0.13'
+
+
+### MAP RENDERING AND NAVIGATION
+
+# measurement units
+UNITS = 'us' # 'us' or 'metric'
+
+WAYPOINTS = 'data/waypoints'
+
+
+
+
+
 
 
 
