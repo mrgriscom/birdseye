@@ -19,19 +19,22 @@ import logging
 from sqlalchemy.sql.expression import tuple_, or_, and_
 
 HASH_LENGTH = 8 # bytes
-CULL_RESOLUTION = 100
-COMMIT_INTERVAL = 40
+CULL_RESOLUTION = 100 # tiles
+COMMIT_INTERVAL = 40 # tiles
 
 def null_digest():
+    """special digest for tiles with no data (e.g., missing tiles)"""
     return '00' * HASH_LENGTH
 
 def tile_url((zoom, x, y), layer):
+    """download url for a tile and layer"""
     L = settings.LAYERS[layer]
     if '_tileurl' not in L:
         L['_tileurl'] = precompile_tile_url(L['tile_url'])
     return L['_tileurl'](zoom, x, y)
 
 def precompile_tile_url(template):
+    """precompile the tile url format into a form that can be templated efficiently"""
     replacements = {
         '{z}': '%(z)d',
         '{x}': '%(x)d',
@@ -64,6 +67,8 @@ def precompile_tile_url(template):
     return _url
 
 def query_tiles(sess, layer, chunk, refresh_cutoff, refresh_cutoff_missing):
+    """see existing_tiles; query the set of tiles 'chunk' to see which already exist.
+    'cutoff's are timestamps instead of intervals now"""
     q = sess.query(mt.Tile).filter(mt.Tile.layer == layer).filter(tuple_(mt.Tile.z, mt.Tile.x, mt.Tile.y).in_(list(chunk)))
     def cutoff_criteria():
         if refresh_cutoff is not None:
@@ -76,6 +81,14 @@ def query_tiles(sess, layer, chunk, refresh_cutoff, refresh_cutoff_missing):
     return set((t.z, t.x, t.y) for t in q)
 
 def existing_tiles(sess, tiles, layer, refresh_window=None, refresh_window_missing=None, chunk_size=CULL_RESOLUTION):
+    """generator that returns which tiles in the set 'tiles' already exist. if a
+    'refresh_window' is defined, only tiles fetched within that days (e.g., 7 days)
+    are considered to exist.
+
+    refresh_window -- lookback window for tiles with actual data
+    refresh_window_missing -- lookback window for tiles that were missing in the map layer
+    """
+
     def cutoff(threshold):
         return datetime.now() - threshold if threshold is not None else None
 
@@ -86,16 +99,24 @@ def existing_tiles(sess, tiles, layer, refresh_window=None, refresh_window_missi
         yield (query_tiles(sess, layer, chunk, refresh_cutoff, refresh_cutoff_missing), len(chunk))
 
 def random_walk_level(tiles, window=10):
+    """iterate through the tiles for a given zoom level in a random-walky
+    fashion, to make it less obvious that tiles are being ripped by a
+    script"""
+
     target = None
     while tiles:
         if not target:
+            # pick a random starting point
             target = u.rand_elem(tiles)
         else:
+            # pick the as-yet-unvisited tile closest to the previous active point
             metric = lambda t: u.manhattan_dist(target[1:], t[1:])
             closest = min(metric(t) for t in tiles)
             candidates = [t for t in tiles if metric(t) == closest]
             target = random.choice(candidates)
 
+        # determine the current 'screen view' centered around the active point (width 'window'),
+        # and download in random order
         (xmin, ymin) = [f - window / 2 for f in target[1:]]
         (xmax, ymax) = [f + window - 1 for f in (xmin, ymin)]
 
@@ -105,18 +126,25 @@ def random_walk_level(tiles, window=10):
             yield t
 
 def random_walk(tiles):
+    """iterate through all tiles in a random-walk fashion, but proceeding through
+    zoom levels in order (download 'bigger' tiles first)"""
     zooms = sorted(set(z for z, x, y in tiles))
     for zoom in zooms:
         for t in random_walk_level(u.set_filter(tiles, lambda (z, x, y): z == zoom)):
             yield t
 
 def register_tile(dbpush, tile, layer, data, hashfunc):
+    """save a tile to disk and to database
+
+    dbpush -- a wrapper function to add tiles to a pending set to be committed to the db
+    """
     z, x, y = tile
     t = mt.Tile(layer=layer, z=z, x=x, y=y)
     t.save(data, hashfunc)
     dbpush(t)
 
 def process_tile(dbpush, tile, layer, status, data):
+    """process a tile download result, accounting for some common errors"""
     def digest(data):
         if data is not None:
             return hashlib.sha1(data).hexdigest()[:HASH_LENGTH*2]
@@ -135,15 +163,21 @@ def process_tile(dbpush, tile, layer, status, data):
         elif status == httplib.FORBIDDEN:
             msg = 'Warning: we may have been banned'
         else:
-            msg = 'Unrecognized response code %d' % status
+            msg = 'Unrecognized response code %d (tile %s)' % (status, str(tile))
         return (False, msg)
 
 def tile_counts(tiles):
+    """determine how many tiles to be downloaded at each zoom level"""
     totals = collections.defaultdict(lambda: 0, u.map_reduce(tiles, lambda (z, x, y): [(z,)], len))
     max_zoom = max(totals.keys()) if totals else -1
     return [totals[z] for z in range(max_zoom + 1)]
 
+# monitor threads below must have a function:
+#   status() => (# processed, total # to process, # error occurred thus far)
+
 class TileEnumerator(threading.Thread):
+    """a monitorable thread to enumerate all tiles in a download region"""
+
     def __init__(self, region, depth):
         threading.Thread.__init__(self)
 
@@ -162,6 +196,9 @@ class TileEnumerator(threading.Thread):
         return (self.count, self.est_num_tiles, 0)
 
 class TileCuller(threading.Thread):
+    """a monitorable thread to enumerate which tiles must be downloaded (i.e., do not
+    already exist)"""
+
     def __init__(self, tiles, layer, refresh_window, refresh_window_missing, sess):
         threading.Thread.__init__(self)
 
@@ -169,6 +206,7 @@ class TileCuller(threading.Thread):
         self.existing_tiles = set()
 
         if refresh_window == timedelta(0) and refresh_window_missing == timedelta(0):
+            # we must (re-)download all; don't bother checking existing
             self.existing_tile_stream = None
         else:
             self.existing_tile_stream = existing_tiles(sess, tiles, layer, refresh_window, refresh_window_missing)
@@ -190,6 +228,8 @@ class TileCuller(threading.Thread):
         return (self.num_processed, self.num_tiles, 0)
 
 class TileDownloader(threading.Thread):
+    """a monitorable thread that downloads and processes tiles"""
+
     def __init__(self, tiles, layer, sess):
         threading.Thread.__init__(self)
 
@@ -198,6 +238,7 @@ class TileDownloader(threading.Thread):
 
         self.num_tiles = len(tiles)
 
+        # error count and last error are displayed in the curses interface
         self.error_count = 0
         self.last_error = None
 
@@ -229,6 +270,8 @@ class TileDownloader(threading.Thread):
         return (self.dlpxr.count, self.num_tiles, self.error_count)
 
 class DownloadProcessor(threading.Thread):
+    """thread that consumed the download output queue and processes the resultant tile data"""
+
     def __init__(self, dlmgr, processfunc, num_expected=None, onerror=lambda m: None):
         threading.Thread.__init__(self)
         self.up = True
@@ -261,27 +304,36 @@ class DownloadProcessor(threading.Thread):
         return self.count == (self.num_expected if self.num_expected is not None else -1)
 
 class TileDB(object):
+    """a staging area for tile commits"""
+
     def __init__(self, sess, limit=1):
+        """
+        limit -- commit tiles in chunks of 'limit'
+        """
         self.sess = sess
         self.limit = limit
 
         self.pending = []
 
     def push(self, tile):
+        """add a new tile to the pending set"""
         self.pending.append(tile)
         if len(self.pending) >= self.limit:
             self.commit()
 
     def commit(self):
+        """commit all pending tiles"""
         if not self.pending:
             return
 
+        # check with tiles already exist in the db
         existing = dict((t.pk(), t) for t in self.sess.query(mt.Tile).filter(tuple_(mt.Tile.layer, mt.Tile.z, mt.Tile.x, mt.Tile.y).in_(t.pk() for t in self.pending)))
 
         old_uuids = set()
         for t in self.pending:
             t_old = existing.get(t.pk())
             if t_old:
+                # if tile exists, update the existing tile object
                 if t_old.uuid != t.uuid:
                     old_uuids.add(t_old.uuid)
                     t_old.uuid = t.uuid
@@ -290,12 +342,13 @@ class TileDB(object):
 
         self.sess.commit()
 
+        # for existing tiles that were updated, possibly delete the tile image data
         for uuid in old_uuids:
             if uuid == null_digest():
                 continue
 
             if not self.sess.query(mt.Tile).filter(mt.Tile.uuid == uuid).count():
-                # no tile references this file uuid anymore
+                # no tile references this file uuid anymore; delete
                 os.remove(mt.Tile(uuid=uuid).path())
 
         self.pending = []

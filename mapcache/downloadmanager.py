@@ -9,18 +9,26 @@ import settings
 REQUESTS_PER_CONN = 50
 
 class DownloadManager(object):
-    # this class is not actually a thread! it just mimics one (to manager all its worker threads)
+    """a frontend for many downloading worker threads. this class is not actually
+    a thread! it just mimics one (to manage the worker threads)
+    """
 
     def __init__(self, terminal_statuses, num_workers=10, num_retries=5, limit=1):
+        """
+        limit -- maximum buffer for processing; this prevents worker threads downloading
+          items faster than they can be processed and filling up all memory
+        """
         self.qin = Queue(limit)
         self.qout = Queue(limit)
         self.workers = [DownloadWorker(self.qin, self.qout, terminal_statuses, num_retries) for i in range(num_workers)]
  
     def start(self):
+        """start all workers"""
         for w in self.workers:
             w.start()
 
     def terminate(self):
+        """kill all workers"""
         if not self.qin.empty():
             logging.warning('shutting down downloaders before queue empty')
 
@@ -28,20 +36,30 @@ class DownloadManager(object):
             w.terminate()
 
     def join(self):
+        """block until all workers have terminated"""
         for w in self.workers:
             w.join()
 
     def enqueue(self, item):
+        """add a item to download"""
         self.qin.put(item)
 
     def fetch(self):
+        """retrieve a downloaded item for processing"""
         try:
             return self.qout.get(True, 0.05)
         except Empty:
             return None
 
 class DownloadWorker(threading.Thread):
+    """a downloading worker thread"""
+
     def __init__(self, qin, qout, terminal_statuses, num_retries):
+        """
+        terminal_statuses -- consider the download 'complete' if any of these statuses
+          received, else, do a retry
+        num_retries -- number of retries before giving up
+        """
         threading.Thread.__init__(self)
         self.up = True
 
@@ -53,6 +71,7 @@ class DownloadWorker(threading.Thread):
         self.terminal_statuses = terminal_statuses
         self.num_retries = num_retries
 
+        # mapping of open connection to each host
         self.connections = {}
 
     def terminate(self):
@@ -70,6 +89,7 @@ class DownloadWorker(threading.Thread):
             logging.exception('unexpected exception in download worker thread')
 
     def download(self, (key, url)):
+        """download a single item and place in 'out' queue for processing"""
         host = urlparse(url).netloc
         headers = {'User-Agent': self.useragent}
 
@@ -85,6 +105,7 @@ class DownloadWorker(threading.Thread):
         self.qout.put((key, status, data))
 
     def get_connection(self, host):
+        """get persistent connection to host, or (re-)initialize if necessary"""
         conn = self.connections.get(host)
         if not conn or not conn.good():
             conn = Connection.make(host, self.connection_request_limit)
@@ -92,7 +113,13 @@ class DownloadWorker(threading.Thread):
         return conn
 
 class Connection(object):
+    """a persistent, keep-alive http connection"""
+
     def __init__(self, host, limit):
+        """
+        host -- e.g., c.mapserver.org:8080
+        limit -- maximum requests on this connection before discarding
+        """
         self.conn = httplib.HTTPConnection(host, strict=True)
         self.limit = limit
 
@@ -108,18 +135,20 @@ class Connection(object):
             raise
 
     def good(self):
+        """return whether connection is still usable; clean up if not"""
         g = self.count < self.limit and not self.error
         if not g:
             self.conn.close()
         return g
 
     def download(self, url, headers={}):
+        """execute a download request on this connection"""
         up = urlparse(url)
         get = '%s?%s' % (up.path, up.query)
         headers.update({
             'Accept': '*/*',
-            'Connection': 'Keep-Alive'}
-        )
+            'Connection': 'Keep-Alive'
+        })
 
         try:
             self.conn.request('GET', get, headers=headers)

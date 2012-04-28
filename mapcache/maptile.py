@@ -5,6 +5,7 @@ import util.util as u
 import settings
 import os.path
 from glob import glob
+import mapdownload # argh circular import
 
 from sqlalchemy import create_engine, Column, DateTime, Integer, String, ForeignKey, CheckConstraint, Index
 from sqlalchemy.ext.declarative import declarative_base
@@ -39,9 +40,14 @@ class Tile(Base):
         super(Tile, self).__init__(**kw)
 
     def pk(self):
+        """get primary key"""
         return (self.layer, self.z, self.x, self.y)
 
     def path(self, suffix=None):
+        """compute tile file path
+
+        suffix -- if absent, pull from layer definition, or directory search
+        """
         bucket = list(self.path_intermediary())[-1]
         def mkpath(suffix):
             return os.path.join(bucket, '%s.%s' % (self.uuid, suffix))
@@ -58,10 +64,16 @@ class Tile(Base):
         return mkpath(suffix)
 
     def path_intermediary(self):
+        """compute all intermediary paths ('buckets')"""
         for i in range(len(settings.TILE_BUCKETS)):
             yield os.path.join(settings.TILE_ROOT, *(self.uuid[:k] for k in settings.TILE_BUCKETS[:i+1]))
 
     def save(self, data, hashfunc, file_type=None):
+        """save tile data to file and compute uuid
+
+        data -- raw image data
+        hashfunc -- hash function to compute uuid
+        """
         self.uuid = hashfunc(data)
         if data is None:
             return
@@ -75,7 +87,23 @@ class Tile(Base):
             with open(path, 'w') as f:
                 f.write(data)
 
+    def url(self):
+        """compute the original mapserver url for this tile"""
+        return mapdownload.tile_url((self.z, self.x, self.y), self.layer)
+
+    def get_descendants(self, sess, max_depth=None, min_depth=None):
+        """query all descendant tiles from this tile (i.e., tiles at deeper zooms
+        that overlap this tile's area"""
+        q = sess.query(Tile).filter(Tile.layer == self.layer).filter(Tile.qt > self.qt).filter(Tile.qt < (self.qt + '4'))
+        if min_depth:
+            q = q.filter(Tile.z >= self.z + min_depth)
+        if max_depth:
+            q = q.filter(Tile.z <= self.z + max_depth)
+        return q
+
 class Region(Base):
+    """named regions / tile download areas"""
+
     __tablename__ = 'regions'
 
     id = Column(Integer, primary_key=True)
@@ -92,6 +120,8 @@ class Region(Base):
         return Polygon([tuple(float(k) for k in c.split(',')) for c in self.boundary.split()])
 
 class RegionOverlay(Base):
+    """record which regions have been downloaded -- layer and depth"""
+
     __tablename__ = 'region_overlays'
 
     region = Column(Integer, ForeignKey('regions.id'), primary_key=True) # todo: cascade?
@@ -101,18 +131,10 @@ class RegionOverlay(Base):
     created_on = Column(DateTime, default=func.now())
 
 def dbsess(connector=settings.TILE_DB, echo=False):
+    """create a connector to the tile database"""
     engine = create_engine(connector, echo=echo)
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine)()
-
-def get_descendants(sess, zoom, x, y, min_depth=None, max_depth=None):
-    qt = u.to_quadindex(zoom, x, y)
-    q = sess.query(Tile).filter(Tile.qt > qt).filter(Tile.qt < (qt + '4'))
-    if min_depth:
-        q = q.filter(Tile.z >= zoom + min_depth)
-    if max_depth:
-        q = q.filter(Tile.z <= zoom + max_depth)
-    return q
 
 
 
@@ -274,6 +296,7 @@ def quad_children(x, y):
             yield (2 * x + xo, 2 * y + yo)
 
 class RegionTessellation(object):
+    """an enumerator of all the tiles within a region"""
     def __init__(self, polygon, max_zoom, offset=1.):
         self.polygon = polygon
         self.max_zoom = max_zoom
@@ -287,6 +310,7 @@ class RegionTessellation(object):
             yield t
 
     def size_estimate(self, compensate=True):
+        """estimate the number of tiles contained within"""
         # this method is pretty kludgey. better method: generate new polygons with
         # .5*tile radius 'fuzz' (at each zoom level), and compute/sum exact areas
 
