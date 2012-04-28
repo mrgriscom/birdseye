@@ -2,6 +2,7 @@ import math
 from Polygon import *
 import bisect
 import util.util as u
+from util import geodesy
 import settings
 import os.path
 from glob import glob
@@ -111,13 +112,71 @@ class Region(Base):
     boundary = Column(String, nullable=False)
 
     def __init__(self, name, coords):
+        """
+        coords -- a list of lat/lon coordinates ([(lat0, lon0), (lat1, lon1), ...]),
+          or a string like 'lat0,lon0 lat1,lon1 ...'. lon must be bounded [-180,180]
+        """
+        if hasattr(coords, '__iter__'):
+            coords = ' '.join('%s,%s' % c for c in coords)
+
         super(Region, self).__init__(**{
             'name': name,
-            'boundary': ' '.join('%s,%s' % c for c in coords),
+            'boundary': coords,
         })
 
+        # todo validate curve
+
+    def coords(self):
+        """coordinate list from db string representation"""
+        return [tuple(float(k) for k in c.split(',')) for c in self.boundary.split()]
+
     def poly(self):
-        return Polygon([tuple(float(k) for k in c.split(',')) for c in self.boundary.split()])
+        """generate a polygon for the region, in lat/lon coordinates, taking
+        care of wrapping around the IDL"""
+        # correct coords so each lon is within 180 deg (in absolute
+        # terms) of the previous. this essentially 'unrolls' any overlap
+        # with the IDL by letting lon go beyond [-180,180]
+        def relative_adjust(coords):
+            ref_lon = 0.
+            for lat, lon in coords:
+                adj_lon = geodesy.anglenorm(lon, 180. - ref_lon)
+                yield (lat, adj_lon)
+                ref_lon = adj_lon
+        coords = list(relative_adjust(self.coords()))
+        min_lon = min(c[1] for c in coords)
+        max_lon = max(c[1] for c in coords)
+
+        # for each wraparound (360-degree width) segment of unrolled
+        # poly, cut out that segment and shift back to normal lon range
+        unrolled = Polygon(coords)
+        def poly_segment(edge):
+            # clip lat to prevent discontinuity when convert to mercator
+            world = quadrant(-89.999, 89.999, edge, edge + 360.)
+            overlap = world & unrolled
+            overlap.shift(0, -180. - edge)
+            return overlap
+        edge0 = ((min_lon + 180.) // 360. - .5) * 360.
+        return reduce(lambda a, b: a | b, (poly_segment(edge) for edge in range(edge0, max_lon, 360.)))
+
+    def merc_poly(self):
+        """like poly(), but transformed to mercator coordinates"""
+        p = self.poly()
+        mp = Polygon()
+        for i, c in enumerate(p):
+            mp.addContour(ll_to_xy(c), p.isHole(i))
+        return mp
+
+    @staticmethod
+    def world():
+        """region covering entire world"""
+        return Region('world', [
+                # delta-lons must be < 180
+                ( 90, -180), ( 90, -60), ( 90,  60), ( 90,  180),
+                (-90,  180), (-90,  60), (-90, -60), (-90, -180), 
+            ])
+    
+def ll_to_xy(coords):
+    return [mercator_to_xy(ll_to_mercator(c)) for c in coords]
 
 class RegionOverlay(Base):
     """record which regions have been downloaded -- layer and depth"""

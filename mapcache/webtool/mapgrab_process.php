@@ -6,7 +6,7 @@ $f = fopen($tmpfile, "w");
 fwrite($f, "name: " . $_POST['handle'] . "\n");
 fwrite($f, "region: " . $_POST['data'] . "\n");
 fwrite($f, "layers:\n");
-fwrite($f, "  gmap-map:\n");
+fwrite($f, "  googmap:\n");
 fwrite($f, "    zoom: " .  $_POST['zoom'] . "\n");
 fclose($f);
 chmod($tmpfile, 0755);

@@ -113,7 +113,7 @@ def validate_region (region_str):
       print 'Region coordinates out of range; exiting...'
       return None
     
-  return Polygon(coords)
+  return maptile.Region('__', coords)
 
 def check_unsupported (args):
   if 'delete' in args:
@@ -183,14 +183,15 @@ def download(region, overlay, max_depth, refresh_mode):
     curses.wrapper(download_curses, region, overlay, max_depth, refresh_mode)
 
 def download_curses(w, region, overlay, max_depth, refresh_mode):
-    polygon = Polygon([maptile.mercator_to_xy(maptile.ll_to_mercator(p)) for p in region.contour(0)])
+    polygon = region.merc_poly()
  
     te = mapdownload.TileEnumerator(polygon, max_depth)
     monitor(w, 0, te, 'Enumerating', 15, 3)
 
     print_tile_counts(w, mapdownload.tile_counts(te.tiles), 'Tiles in region', 4, 2, max_depth=max_depth)
 
-    tc = mapdownload.TileCuller(te.tiles, overlay, None, None, maptile.dbsess())
+#    tc = mapdownload.TileCuller(te.tiles, overlay, None, None, maptile.dbsess())
+    tc = mapdownload.TileCuller(te.tiles, overlay, timedelta(0), timedelta(0), maptile.dbsess())
     monitor(w, 1, tc, 'Culling', 15)
 
     print_tile_counts(w, mapdownload.tile_counts(tc.tiles), 'Tiles to download', 4, 19, max_depth=max_depth)

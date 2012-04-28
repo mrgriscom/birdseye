@@ -32,11 +32,10 @@ class TileHandler(web.RequestHandler):
             self.set_header('Content-Type', 'image/png')
             self.write(content)
         else:
-            self.set_header('Content-Type', 'image/png')
-            with open('/home/drew/tmp/overlay.png') as f:
-                self.write(f.read())
-
-#            self.set_status(404)
+#            self.set_header('Content-Type', 'image/png')
+#            with open('/home/drew/tmp/overlay.png') as f:
+#                self.write(f.read())
+            self.set_status(404)
 
 if __name__ == "__main__":
 
