@@ -10,25 +10,28 @@ from tornado.httpclient import HTTPError
 from tornado.template import Template
 import logging
 import os
+import settings
+import json
 
 from mapcache import maptile
 import nav.texture
+
+class LayersHandler(web.RequestHandler):
+    def get(self):
+        self.set_header('Content-Type', 'text/json')
+        self.write(json.dumps(settings.LAYERS.keys()))
 
 class TileHandler(web.RequestHandler):
     def initialize(self, dbsess):
         self.sess = dbsess
 
-    def get(self):
-        z = self.get_argument('z')
-        x = self.get_argument('x')
-        y = self.get_argument('y')
-
-        content = nav.texture.get_tile(self.sess, z, x, y, 'gmap-map')
+    def get(self, layer, z, x, y):
+        content = nav.texture.get_tile(self.sess, z, x, y, layer)
         if content:
-            self.set_header("Content-Type", "image/png")
+            self.set_header('Content-Type', 'image/png')
             self.write(content)
         else:
-            self.set_header("Content-Type", "image/png")
+            self.set_header('Content-Type', 'image/png')
             with open('/home/drew/tmp/overlay.png') as f:
                 self.write(f.read())
 
@@ -39,8 +42,9 @@ if __name__ == "__main__":
     sess = maptile.dbsess()
 
     application = web.Application([
-        (r'/tile', TileHandler, {'dbsess': sess}),
-        (r"/static/(.*)", web.StaticFileHandler, {"path": "/home/drew/dev/birdseye/web/static/"}),
+        (r'/layers', LayersHandler),
+        (r'/tile/([A-Za-z0-9_-]+)/([0-9]+)/([0-9]+),([0-9]+)', TileHandler, {'dbsess': sess}),
+        (r'/static/(.*)', web.StaticFileHandler, {'path': '/home/drew/dev/birdseye/web/static/'}),
     ])
     application.listen(10101)
 

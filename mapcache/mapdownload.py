@@ -1,7 +1,7 @@
 import threading
 import math
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 import random
 import os
 import httplib
@@ -14,11 +14,13 @@ import settings
 import util.util as u
 import re
 import collections
+import logging
 
 from sqlalchemy.sql.expression import tuple_, or_, and_
 
 HASH_LENGTH = 8 # bytes
-BULK_RESOLUTION = 100
+CULL_RESOLUTION = 100
+COMMIT_INTERVAL = 40
 
 def null_digest():
     return '00' * HASH_LENGTH
@@ -62,16 +64,18 @@ def precompile_tile_url(template):
     return _url
 
 def query_tiles(sess, layer, chunk, refresh_cutoff, refresh_cutoff_missing):
-    q = conn.query(mt.Tile).filter(mt.Tile.layer == layer).filter(tuple_(mt.Tile.z, mt.Tile.x, mt.Tile.y).in_(list(chunk)))
-    def cutoff_critera():
+    q = sess.query(mt.Tile).filter(mt.Tile.layer == layer).filter(tuple_(mt.Tile.z, mt.Tile.x, mt.Tile.y).in_(list(chunk)))
+    def cutoff_criteria():
         if refresh_cutoff is not None:
             yield and_(mt.Tile.uuid != null_digest(), mt.Tile.fetched_on > refresh_cutoff)
         if refresh_cutoff_missing is not None:
             yield and_(mt.Tile.uuid == null_digest(), mt.Tile.fetched_on > refresh_cutoff_missing)
-    q = q.filter(or_(*cutoff_critera()))
+    coc = list(cutoff_criteria())
+    if coc:
+        q = q.filter(or_(*coc))
     return set((t.z, t.x, t.y) for t in q)
 
-def existing_tiles(sess, tiles, layer, refresh_window=None, refresh_window_missing=None, chunk_size=BULK_RESOLUTION):
+def existing_tiles(sess, tiles, layer, refresh_window=None, refresh_window_missing=None, chunk_size=CULL_RESOLUTION):
     def cutoff(threshold):
         return datetime.now() - threshold if threshold is not None else None
 
@@ -95,7 +99,7 @@ def random_walk_level(tiles, window=10):
         (xmin, ymin) = [f - window / 2 for f in target[1:]]
         (xmax, ymax) = [f + window - 1 for f in (xmin, ymin)]
 
-        swatch = list(filter_set(tiles, lambda z, x, y: x >= xmin and x <= xmax and y >= ymin and y <= ymax))
+        swatch = list(u.set_filter(tiles, lambda (z, x, y): x >= xmin and x <= xmax and y >= ymin and y <= ymax))
         random.shuffle(swatch)
         for t in swatch:
             yield t
@@ -103,7 +107,7 @@ def random_walk_level(tiles, window=10):
 def random_walk(tiles):
     zooms = sorted(set(z for z, x, y in tiles))
     for zoom in zooms:
-        for t in random_walk_level(filter_set(tiles, lambda z, x, y: z == zoom)):
+        for t in random_walk_level(u.set_filter(tiles, lambda (z, x, y): z == zoom)):
             yield t
 
 def register_tile(dbpush, tile, layer, data, hashfunc):
@@ -135,7 +139,7 @@ def process_tile(dbpush, tile, layer, status, data):
         return (False, msg)
 
 def tile_counts(tiles):
-    totals = collections.defaultdict(lambda: 0, u.map_reduce(tiles, lambda z, x, y: [(z,)], lambda v: len(v)))
+    totals = collections.defaultdict(lambda: 0, u.map_reduce(tiles, lambda (z, x, y): [(z,)], len))
     max_zoom = max(totals.keys()) if totals else -1
     return [totals[z] for z in range(max_zoom + 1)]
 
@@ -149,9 +153,9 @@ class TileEnumerator(threading.Thread):
         self.count = 0
 
     def run(self):
-        for i, t in enumerate(self.tess):
+        for t in self.tess:
             self.tiles.add(t)
-            self.count = i
+            self.count += 1
         self.est_num_tiles = self.count
 
     def status(self):
@@ -180,7 +184,7 @@ class TileCuller(threading.Thread):
         else:
             self.num_processed = self.num_tiles
 
-        self.new_tiles = self.tiles - self.existing_tiles
+        self.tiles = self.tiles - self.existing_tiles
 
     def status(self):
         return (self.num_processed, self.num_tiles, 0)
@@ -199,7 +203,7 @@ class TileDownloader(threading.Thread):
 
         self.dlmgr = DownloadManager([httplib.OK, httplib.NOT_FOUND, httplib.FORBIDDEN], limit=100)
 
-        self.dbsess = TileDB(sess, BULK_RESOLUTION)
+        self.dbsess = TileDB(sess, COMMIT_INTERVAL)
         def process(key, status, data):
             return process_tile(self.dbsess.push, key, self.layer, status, data)
         self.dlpxr = DownloadProcessor(self.dlmgr, process, self.num_tiles, self.onerror)
@@ -222,7 +226,7 @@ class TileDownloader(threading.Thread):
         self.last_error = msg
 
     def status(self):
-        return (self.dlpxr.count, self.num_tiles, self.dlpxr.errcount)
+        return (self.dlpxr.count, self.num_tiles, self.error_count)
 
 class DownloadProcessor(threading.Thread):
     def __init__(self, dlmgr, processfunc, num_expected=None, onerror=lambda m: None):
@@ -261,31 +265,36 @@ class TileDB(object):
         self.sess = sess
         self.limit = limit
 
-        self.old_uuids = set()
+        self.pending = []
 
     def push(self, tile):
-        existing = self.sess.query(mt.Tile).get((tile.layer, tile.z, tile.x, tile.y))
-        if existing:
-            if existing.uuid != tile.uuid:
-                self.old_uuids.add(existing.uuid)
-                existing.uuid = tile.uuid
-        else:
-            self.sess.add(tile)
-
-        if len(self.sess.new) + len(self.sess.dirty) >= BULK_RESOLUTION:
+        self.pending.append(tile)
+        if len(self.pending) >= self.limit:
             self.commit()
 
     def commit(self):
+        existing = dict((t.pk(), t) for t in self.sess.query(mt.Tile).filter(tuple_(mt.Tile.layer, mt.Tile.z, mt.Tile.x, mt.Tile.y).in_(t.pk() for t in self.pending)))
+
+        old_uuids = set()
+        for t in self.pending:
+            t_old = existing.get(t.pk())
+            if t_old:
+                if t_old.uuid != t.uuid:
+                    old_uuids.add(t_old.uuid)
+                    t_old.uuid = t.uuid
+            else:
+                self.sess.add(t)
+
         self.sess.commit()
 
-        for uuid in self.old_uuids:
+        for uuid in old_uuids:
             if uuid == null_digest():
                 continue
 
-            if not len(self.sess.query(mt.Tile).filter(uuid=uuid)):
+            if not self.sess.query(mt.Tile).filter(mt.Tile.uuid == uuid).count():
                 # no tile references this file uuid anymore
-                os.path.remove(mt.Tile(uuid=uuid).path())
+                os.remove(mt.Tile(uuid=uuid).path())
 
-        self.old_uuids = set()
+        self.pending = []
 
 

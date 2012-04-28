@@ -1,7 +1,7 @@
 from Image import *
 import os
 import ImageEnhance
-from mapcache import mapdownloader
+from mapcache import mapdownload
 from mapcache import maptile
 import settings
 import sys

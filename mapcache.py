@@ -2,9 +2,15 @@ import sys
 import yaml
 import re
 from Polygon import *
-from datetime import datetime
+from datetime import datetime, timedelta
 from mapcache import mapdownload
 import settings
+import curses
+from mapcache import maptile
+import math
+import time
+import settings
+import logging
 
 def error_out (msg):
   print msg
@@ -116,8 +122,8 @@ def check_unsupported (args):
     if len(args['layers']) > 1:
       error_out('Only one layer supported')
     (layertype, layer) = args['layers'].items()[0]
-    if layertype != 'gmap-map':
-      error_out('Only gmap-map overlay type supported')
+#    if layertype != 'gmap-map':
+#      error_out('Only gmap-map overlay type supported')
     if 'delete' in layer or 'trim' in layer:
       error_out('Delete/trim not supported')
 
@@ -177,19 +183,19 @@ def download(region, overlay, max_depth, refresh_mode):
     curses.wrapper(download_curses, region, overlay, max_depth, refresh_mode)
 
 def download_curses(w, region, overlay, max_depth, refresh_mode):
-    polygon = Polygon([mt.mercator_to_xy(mt.ll_to_mercator(p)) for p in region.contour(0)])
+    polygon = Polygon([maptile.mercator_to_xy(maptile.ll_to_mercator(p)) for p in region.contour(0)])
  
-    te = tile_enumerator(polygon, max_depth)
+    te = mapdownload.TileEnumerator(polygon, max_depth)
     monitor(w, 0, te, 'Enumerating', 15, 3)
 
-    print_tile_counts(w, tile_counts(te.tiles), 'Tiles in region', 4, 2, max_depth=max_depth)
+    print_tile_counts(w, mapdownload.tile_counts(te.tiles), 'Tiles in region', 4, 2, max_depth=max_depth)
 
-    tc = tile_culler(te.tiles, refresh_mode, mt.dbsess())
+    tc = mapdownload.TileCuller(te.tiles, overlay, None, None, maptile.dbsess())
     monitor(w, 1, tc, 'Culling', 15)
 
-    print_tile_counts(w, tile_counts(tc.tiles), 'Tiles to download', 4, 19, max_depth=max_depth)
+    print_tile_counts(w, mapdownload.tile_counts(tc.tiles), 'Tiles to download', 4, 19, max_depth=max_depth)
 
-    td = tile_downloader(tc.tiles, mt.dbsess())
+    td = mapdownload.TileDownloader(tc.tiles, overlay, maptile.dbsess())
     monitor(w, 2, td, 'Downloading', 15, erry=3)
 
     try:
@@ -209,15 +215,9 @@ def update_status(w, thread, done, y, caption, width, sf, erry):
     println(w, status(caption, thread.status(), width, sf if not done else 0), y)
  
     if erry != None:
-        err = get_error(thread)
+        err = thread.last_error
         if err:
             println(w, err, erry, 2)
-
-def get_error(thread):
-    try:
-        return thread.errors.get(False)
-    except Queue.Empty:
-        return None
 
 def println(w, str, y, x=0):
     w.addstr(y, x, str)
@@ -264,13 +264,14 @@ def print_tile_counts(w, counts, header, y, x, width=None, zheader='Zoom', max_d
 
 
 if __name__ == "__main__":
+  settings.init_logging()
 
   args = args_from_yaml(sys.stdin)
   check_unsupported(args)
   db_validate(args)
 
   (layername, layerinfo) = args['layers'].items()[0]
-  mapdownloader.download(args['region'], layername, layerinfo['zoom'], layerinfo['refr'])
+  download(args['region'], layername, layerinfo['zoom'], layerinfo['refr'])
 
 
 

@@ -32,11 +32,17 @@ class Tile(Base):
     )
 
     def __init__(self, **kw):
-        kw['qt'] = u.to_quadindex(kw['z'], kw['x'], kw['y'])
+        try:
+            kw['qt'] = u.to_quadindex(kw['z'], kw['x'], kw['y'])
+        except KeyError:
+            pass
         super(Tile, self).__init__(**kw)
 
+    def pk(self):
+        return (self.layer, self.z, self.x, self.y)
+
     def path(self, suffix=None):
-        bucket = list(self.path_intermediary()[-1])
+        bucket = list(self.path_intermediary())[-1]
         def mkpath(suffix):
             return os.path.join(bucket, '%s.%s' % (self.uuid, suffix))
 
@@ -88,7 +94,7 @@ class Region(Base):
 class RegionOverlay(Base):
     __tablename__ = 'region_overlays'
 
-    region = Column(Integer, ForeignKey('regions.id'), primary_key=True)
+    region = Column(Integer, ForeignKey('regions.id'), primary_key=True) # todo: cascade?
     layer = Column(String, primary_key=True)
     depth = Column(Integer, nullable=False)
 

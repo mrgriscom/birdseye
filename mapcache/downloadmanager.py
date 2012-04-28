@@ -4,10 +4,13 @@ from Queue import *
 import threading
 import socket
 import logging
+import settings
 
 REQUESTS_PER_CONN = 50
 
 class DownloadManager(object):
+    # this class is not actually a thread! it just mimics one (to manager all its worker threads)
+
     def __init__(self, terminal_statuses, num_workers=10, num_retries=5, limit=1):
         self.qin = Queue(limit)
         self.qout = Queue(limit)
@@ -16,8 +19,6 @@ class DownloadManager(object):
     def start(self):
         for w in self.workers:
             w.start()
-        for w in self.workers:
-            w.join()
 
     def terminate(self):
         if not self.qin.empty():
@@ -26,13 +27,17 @@ class DownloadManager(object):
         for w in self.workers:
             w.terminate()
 
+    def join(self):
+        for w in self.workers:
+            w.join()
+
     def enqueue(self, item):
         self.qin.put(item)
 
     def fetch(self):
         try:
             return self.qout.get(True, 0.05)
-        except Queue.Empty:
+        except Empty:
             return None
 
 class DownloadWorker(threading.Thread):
@@ -97,7 +102,7 @@ class Connection(object):
     @staticmethod
     def make(host, limit):
         try:
-            return Connection(host, limit):
+            return Connection(host, limit)
         except (httplib.HTTPException, socket.error):
             logging.exception('http connection error during init')
             raise
