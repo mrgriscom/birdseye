@@ -124,11 +124,19 @@ class Region(Base):
             'boundary': coords,
         })
 
-        # todo validate curve
+        self.validate()
 
     def coords(self):
         """coordinate list from db string representation"""
         return [tuple(float(k) for k in c.split(',')) for c in self.boundary.split()]
+
+    def validate(self):
+        coords = self.coords()
+        if len(coords) < 3:
+            raise Exception('not enough points')
+        for lat, lon in coords:
+            if lat > 90. or lat < -90. or lon < -180. or lon > 180.:
+                raise Exception('coordinates out of range')
 
     def poly(self):
         """generate a polygon for the region, in lat/lon coordinates, taking
