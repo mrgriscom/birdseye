@@ -19,7 +19,8 @@ import nav.texture
 class LayersHandler(web.RequestHandler):
     def get(self):
         self.set_header('Content-Type', 'text/json')
-        self.write(json.dumps(settings.LAYERS.keys()))
+        payload = [{'id': k, 'name': settings.LAYERS[k].get('name', k)} for k in settings.LAYERS.keys()]
+        self.write(json.dumps(payload))
 
 class TileHandler(web.RequestHandler):
     def initialize(self, dbsess):

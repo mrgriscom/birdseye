@@ -11,8 +11,8 @@ $(document).ready(function() {
 	$.get('/layers', null, function(data) {
 		var layers = {};
 		$.each(data, function(i, e) {
-			var layer = new L.TileLayer('/tile/' + e + '/{z}/{x},{y}');
-			layers[e] = layer;
+			var layer = new L.TileLayer('/tile/' + e.id + '/{z}/{x},{y}');
+			layers[e.name] = layer;
 			map.addLayer(layer);
 		    });
 

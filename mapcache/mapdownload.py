@@ -273,6 +273,9 @@ class TileDB(object):
             self.commit()
 
     def commit(self):
+        if not self.pending:
+            return
+
         existing = dict((t.pk(), t) for t in self.sess.query(mt.Tile).filter(tuple_(mt.Tile.layer, mt.Tile.z, mt.Tile.x, mt.Tile.y).in_(t.pk() for t in self.pending)))
 
         old_uuids = set()
