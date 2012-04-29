@@ -85,6 +85,9 @@ def validate_name (str):
   return re.match('^[A-Za-z0-9 !"#$%&\'()*+,\\-./:;<=>?@[\\\\\\]^_`{|}~]+$', str)
 
 def validate_region (region_str):
+  if region_str == 'world':
+    return maptile.Region.world()
+
   pcs = [pc for pc in re.split('(\s+|,)', region_str) if pc.strip()]
 
   if len(pcs) % 3 != 0:

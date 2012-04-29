@@ -158,7 +158,7 @@ class Region(Base):
         # poly, cut out that segment and shift back to normal lon range
         unrolled = Polygon(coords)
         def poly_segment(edge):
-            # clip lat to prevent discontinuity when convert to mercator
+            # clip lat to prevent discontinuity when converting to mercator
             world = quadrant(-89.999, 89.999, edge, edge + 360.)
             overlap = world & unrolled
             overlap.shift(0, -180. - edge)

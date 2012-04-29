@@ -18,6 +18,21 @@ $(document).ready(function() {
 
 		var layersControl = new L.Control.Layers(layers, {});
 		map.addControl(layersControl);
+
+		var canvas_layer = new L.TileLayer.Canvas();
+		canvas_layer.drawTile = function(canvas, tile, zoom) {
+		    $.get('/tilecover/googmap/' + zoom + '/' + tile.x + ',' + tile.y, function(data) {
+			    var ctx = canvas.getContext('2d');
+			    ctx.fillStyle = 'rgba(255, 0, 0, 0.1)';
+
+			    $.each(data, function(i, t) {
+				    var w = 256 * Math.pow(0.5, t.z);
+				    ctx.fillRect(w * t.x, w * t.y, w, w);  
+				});
+			}, 'json');
+		}
+		map.addLayer(canvas_layer);
+
 	    }, 'json');
 
     });
