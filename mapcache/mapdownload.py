@@ -30,7 +30,14 @@ def tile_url((zoom, x, y), layer):
     """download url for a tile and layer"""
     L = settings.LAYERS[layer]
     if '_tileurl' not in L:
-        L['_tileurl'] = precompile_tile_url(L['tile_url'])
+        urlgen = L['tile_url']
+        if hasattr(urlgen, '__call__'):
+            urlgen = urlgen()
+
+        if hasattr(urlgen, '__call__'):
+            L['_tileurl'] = urlgen
+        else:
+            L['_tileurl'] = precompile_tile_url(urlgen)
     return L['_tileurl'](zoom, x, y)
 
 def precompile_tile_url(template):
@@ -151,9 +158,13 @@ def process_tile(dbpush, tile, layer, status, data):
         else:
             return null_digest()
 
-    if status in [httplib.OK, httplib.NOT_FOUND]:
+    if status in (httplib.OK, httplib.NOT_FOUND, httplib.FOUND):
         try:
-            register_tile(dbpush, tile, layer, data if status == httplib.OK else None, digest)
+            # treat '302 FOUND' as not found because we assume any redirect is to a generic 'missing' tile
+            # no competent tile server would use redirects for normal tiles
+            not_found = (status != httplib.OK)
+
+            register_tile(dbpush, tile, layer, data if not not_found else None, digest)
             return (True, None)
         except IOError:
             return (False, '%s: could not write file' % str(tile))
@@ -242,7 +253,7 @@ class TileDownloader(threading.Thread):
         self.error_count = 0
         self.last_error = None
 
-        self.dlmgr = DownloadManager([httplib.OK, httplib.NOT_FOUND, httplib.FORBIDDEN], limit=100)
+        self.dlmgr = DownloadManager([httplib.OK, httplib.NOT_FOUND, httplib.FORBIDDEN, httplib.FOUND], limit=100)
 
         self.dbsess = TileDB(sess, COMMIT_INTERVAL)
         def process(key, status, data):

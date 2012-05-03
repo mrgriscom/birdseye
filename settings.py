@@ -6,6 +6,10 @@ import logging.handlers
 # database connector for tile info
 TILE_DB = 'postgresql:///tiles'
 
+# if true, store tile images in database as BLOBs
+# if false, store as files in TILE_ROOT
+TILE_STORE_BLOB = False
+
 # root directory where tiles are stored
 TILE_ROOT = '/home/drew/tiles/'
 # how to clump tiles into directory buckets (shouldn't have too many
@@ -41,13 +45,18 @@ GPS_DEVICE_POLICY = 'gps.gpslistener.BU353DevicePolicy'
 ### MAP LAYERS AND CACHING
 
 LAYERS = {
-#    'layername': {
-#        'tile_url': 'http://mapserver/tile?x={x}&y={y}&z={z}',
-#        'file_type': 'png',
-#        'name': 'sample layer',
-#        'cacheable': True,
-#        'overlay': False,
-#    },
+    'layername': {
+        'tile_url': 'http://mapserver/tile?x={x}&y={y}&z={z}',
+        # tile_url may also be a function, called once the first time this
+        # layer is accessed, returning either:
+        #   - a template string
+        #   - another function [(z, x, y) => tileurl] to be called for
+        #     every tile access
+        'file_type': 'png',
+        'name': 'sample layer',
+        'cacheable': True,
+        'overlay': False,
+    },
     'osmmapnik': {
         'tile_url': 'http://{s:abc}.tile.openstreetmap.org/{z}/{x}/{y}.png',
         'file_type': 'png',
