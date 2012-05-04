@@ -193,8 +193,8 @@ def download_curses(w, region, overlay, max_depth, refresh_mode):
 
     print_tile_counts(w, mapdownload.tile_counts(te.tiles), 'Tiles in region', 4, 2, max_depth=max_depth)
 
-#    tc = mapdownload.TileCuller(te.tiles, overlay, None, None, maptile.dbsess())
-    tc = mapdownload.TileCuller(te.tiles, overlay, timedelta(0), timedelta(0), maptile.dbsess())
+    tc = mapdownload.TileCuller(te.tiles, overlay, None, None, maptile.dbsess())
+#    tc = mapdownload.TileCuller(te.tiles, overlay, timedelta(0), timedelta(0), maptile.dbsess())
     monitor(w, 1, tc, 'Culling', 15)
 
     print_tile_counts(w, mapdownload.tile_counts(tc.tiles), 'Tiles to download', 4, 19, max_depth=max_depth)

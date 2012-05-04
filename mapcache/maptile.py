@@ -6,9 +6,11 @@ from util import geodesy
 import settings
 import os.path
 from glob import glob
+from StringIO import StringIO
+from contextlib import closing
 import mapdownload # argh circular import
 
-from sqlalchemy import create_engine, Column, DateTime, Integer, String, ForeignKey, CheckConstraint, Index
+from sqlalchemy import create_engine, Column, DateTime, Integer, String, LargeBinary, ForeignKey, CheckConstraint, Index
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.sql.expression import func
@@ -34,59 +36,34 @@ class Tile(Base):
     )
 
     def __init__(self, **kw):
-        try:
-            kw['qt'] = u.to_quadindex(kw['z'], kw['x'], kw['y'])
-        except KeyError:
-            pass
+        kw['qt'] = u.to_quadindex(kw['z'], kw['x'], kw['y'])
         super(Tile, self).__init__(**kw)
 
     def pk(self):
         """get primary key"""
         return (self.layer, self.z, self.x, self.y)
 
-    def path(self, suffix=None):
-        """compute tile file path
-
-        suffix -- if absent, pull from layer definition, or directory search
-        """
-        bucket = list(self.path_intermediary())[-1]
-        def mkpath(suffix):
-            return os.path.join(bucket, '%s.%s' % (self.uuid, suffix))
-
-        if not suffix:
+    def _data(self, data=None, file_type=None):
+        if not file_type:
             layer = settings.LAYERS.get(self.layer)
             if layer:
-                suffix = layer.get('file_type')
-        if not suffix:
-            try:
-                return glob(mkpath('*'))[0]
-            except IndexError:
-                suffix = ''
-        return mkpath(suffix)
+                file_type = layer.get('file_type')
+        return TileData(uuid=self.uuid, data=data, file_type=file_type)
 
-    def path_intermediary(self):
-        """compute all intermediary paths ('buckets')"""
-        for i in range(len(settings.TILE_BUCKETS)):
-            yield os.path.join(settings.TILE_ROOT, *(self.uuid[:k] for k in settings.TILE_BUCKETS[:i+1]))
-
-    def save(self, data, hashfunc, file_type=None):
+    def save(self, data, hashfunc, file_type=None, sess=None):
         """save tile data to file and compute uuid
 
         data -- raw image data
         hashfunc -- hash function to compute uuid
         """
         self.uuid = hashfunc(data)
-        if data is None:
-            return
+        self._data(data, file_type).save(sess)
 
-        for ipath in self.path_intermediary():
-            if not os.path.exists(ipath):
-                os.mkdir(ipath)
+    def open(self, sess=None):
+        return self._data().open(sess)
 
-        path = self.path(file_type)
-        if not os.path.exists(path):
-            with open(path, 'w') as f:
-                f.write(data)
+    def load(self, sess=None):
+        return self._data().load(sess)
 
     def url(self):
         """compute the original mapserver url for this tile"""
@@ -101,6 +78,109 @@ class Tile(Base):
         if max_depth:
             q = q.filter(Tile.z <= self.z + max_depth)
         return q
+
+class TileData(Base):
+    __tablename__ = 'tdata'
+
+    uuid = Column(String, primary_key=True)
+    file_type = Column(String)
+    data = Column(LargeBinary, nullable=False)
+
+    def path(self, suffix=None):
+        """compute tile file path
+
+        suffix -- if absent, pull from layer definition, or directory search
+        """
+        bucket = list(self.path_intermediary())[-1]
+        def mkpath(suffix):
+            return os.path.join(bucket, '%s.%s' % (self.uuid, suffix))
+
+        if not suffix:
+            suffix = self.file_type
+        if not suffix:
+            try:
+                return glob(mkpath('*'))[0]
+            except IndexError:
+                suffix = ''
+        return mkpath(suffix)
+
+    def path_intermediary(self):
+        """compute all intermediary paths ('buckets')"""
+        for i in range(len(settings.TILE_BUCKETS)):
+            yield os.path.join(settings.TILE_ROOT, *(self.uuid[:k] for k in settings.TILE_BUCKETS[:i+1]))
+
+    def save(self, sess=None):
+        """save tile data to persistent storage"""
+        if not self.data:
+            return
+
+        if settings.TILE_STORE_BLOB:
+            self.save_blob(sess)
+        else:
+            self.save_file()
+
+    def save_blob(self, sess):
+        """save tile data to database blob"""
+        if not sess.query(TileData).get(self.uuid):
+            sess.add(self)
+
+    def save_file(self):
+        """save tile data to file"""
+        for ipath in self.path_intermediary():
+            if not os.path.exists(ipath):
+                os.mkdir(ipath)
+
+        path = self.path()
+        if not os.path.exists(path):
+            with open(path, 'w') as f:
+                f.write(self.data)
+
+    def remove(self, sess=None):
+        """remove tile data from all sources"""
+        if sess:
+            self.remove_blob(sess)
+        self.remove_file()
+
+    def remove_blob(self, sess):
+        """remove tile data from database -- ok if no db entry exists"""
+        sess.query(TileData).filter(TileData.uuid == self.uuid).delete()
+
+    def remove_file(self):
+        """remove tile data from filesystem -- ok if no file exists"""
+        path = self.path()
+        if os.path.exists(path):
+            os.remove(path)
+
+    def open(self, sess=None):
+        return self.open_file() or self.open_blob(sess)
+
+    def load(self, sess=None):
+        return self.load_file() or self.load_blob(sess)
+
+    def open_blob(self, sess):
+        """return file-like object for tile data from database; None if no db entry"""
+        buf = self.load_blob(sess)
+        if buf:
+            return closing(StringIO(buf))
+
+    def open_file(self):
+        """return file handle to tile data; None if no file exists"""
+        path = self.path()
+        if os.path.exists(path):
+            return open(path)
+
+    def load_blob(self, sess):
+        """return tile data from database; None if no db entry"""
+        td = sess.query(TileData).get(self.uuid)
+        if td:
+            return td.data
+
+    def load_file(self):
+        """return tile data from filesystem; None if no file exists"""
+        f = self.open_file()
+        if f:
+            with f:
+                return f.read()
 
 class Region(Base):
     """named regions / tile download areas"""
@@ -196,6 +276,7 @@ class RegionOverlay(Base):
     depth = Column(Integer, nullable=False)
 
     created_on = Column(DateTime, default=func.now())
+
 
 def dbsess(connector=settings.TILE_DB, echo=False):
     """create a connector to the tile database"""

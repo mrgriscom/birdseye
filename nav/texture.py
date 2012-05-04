@@ -71,15 +71,10 @@ def tile_file (mode, zoom, x, y):
     'map': 'gmap-map',
   }[mode]
   t = conn.query(maptile.Tile).get((layer, zoom, x, y))
-  return t.path() if t else None
+  return t.open(conn) if t else None
 
 def get_tile(sess, z, x, y, layer):
     t = sess.query(maptile.Tile).get((layer, z, x, y))
-    if t:
-        import __builtin__
-        with __builtin__.open(t.path()) as f:
-            return f.read()
-    else:
-        return None
+    return t.load(sess) if t else None
 
 

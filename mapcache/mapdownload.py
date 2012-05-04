@@ -20,7 +20,6 @@ from sqlalchemy.sql.expression import tuple_, or_, and_
 
 HASH_LENGTH = 8 # bytes
 CULL_RESOLUTION = 100 # tiles
-COMMIT_INTERVAL = 40 # tiles
 
 def null_digest():
     """special digest for tiles with no data (e.g., missing tiles)"""
@@ -140,17 +139,33 @@ def random_walk(tiles):
         for t in random_walk_level(u.set_filter(tiles, lambda (z, x, y): z == zoom)):
             yield t
 
-def register_tile(dbpush, tile, layer, data, hashfunc):
-    """save a tile to disk and to database
-
-    dbpush -- a wrapper function to add tiles to a pending set to be committed to the db
-    """
+def register_tile(sess, tile, layer, data, hashfunc):
+    """save a tile to disk and to database"""
     z, x, y = tile
     t = mt.Tile(layer=layer, z=z, x=x, y=y)
-    t.save(data, hashfunc)
-    dbpush(t)
+    t.save(data, hashfunc, sess=sess)
+    commit_tile(sess, t)
 
-def process_tile(dbpush, tile, layer, status, data):
+def commit_tile(sess, t):
+    existing = sess.query(mt.Tile).get(t.pk())
+    old_uuid = None
+    if existing:
+        # if tile exists, update the existing tile object
+        if existing.uuid != t.uuid:
+            old_uuid = existing.uuid
+            existing.uuid = t.uuid
+    else:
+        sess.add(t)
+
+    # if updated existing tile, possibly delete the old tile image data
+    if old_uuid and old_uuid != null_digest():
+        if not sess.query(mt.Tile).filter(mt.Tile.uuid == old_uuid).count():
+                # no tile references this file uuid anymore; delete
+                mt.TileData(uuid=old_uuid).remove(sess)
+
+    sess.commit()
+
+def process_tile(sess, tile, layer, status, data):
     """process a tile download result, accounting for some common errors"""
     def digest(data):
         if data is not None:
@@ -164,7 +179,7 @@ def process_tile(dbpush, tile, layer, status, data):
             # no competent tile server would use redirects for normal tiles
             not_found = (status != httplib.OK)
 
-            register_tile(dbpush, tile, layer, data if not not_found else None, digest)
+            register_tile(sess, tile, layer, data if not not_found else None, digest)
             return (True, None)
         except IOError:
             return (False, '%s: could not write file' % str(tile))
@@ -255,9 +270,8 @@ class TileDownloader(threading.Thread):
 
         self.dlmgr = DownloadManager([httplib.OK, httplib.NOT_FOUND, httplib.FORBIDDEN, httplib.FOUND], limit=100)
 
-        self.dbsess = TileDB(sess, COMMIT_INTERVAL)
         def process(key, status, data):
-            return process_tile(self.dbsess.push, key, self.layer, status, data)
+            return process_tile(sess, key, self.layer, status, data)
         self.dlpxr = DownloadProcessor(self.dlmgr, process, self.num_tiles, self.onerror)
 
     def run(self):
@@ -268,8 +282,6 @@ class TileDownloader(threading.Thread):
             self.dlmgr.enqueue((t, tile_url(t, self.layer)))
 
         self.dlpxr.join()
-        self.dbsess.commit()
-
         self.dlmgr.terminate()
         self.dlmgr.join()
 
@@ -313,55 +325,3 @@ class DownloadProcessor(threading.Thread):
 
     def done(self):
         return self.count == (self.num_expected if self.num_expected is not None else -1)
-
-class TileDB(object):
-    """a staging area for tile commits"""
-
-    def __init__(self, sess, limit=1):
-        """
-        limit -- commit tiles in chunks of 'limit'
-        """
-        self.sess = sess
-        self.limit = limit
-
-        self.pending = []
-
-    def push(self, tile):
-        """add a new tile to the pending set"""
-        self.pending.append(tile)
-        if len(self.pending) >= self.limit:
-            self.commit()
-
-    def commit(self):
-        """commit all pending tiles"""
-        if not self.pending:
-            return
-
-        # check with tiles already exist in the db
-        existing = dict((t.pk(), t) for t in self.sess.query(mt.Tile).filter(tuple_(mt.Tile.layer, mt.Tile.z, mt.Tile.x, mt.Tile.y).in_(t.pk() for t in self.pending)))
-
-        old_uuids = set()
-        for t in self.pending:
-            t_old = existing.get(t.pk())
-            if t_old:
-                # if tile exists, update the existing tile object
-                if t_old.uuid != t.uuid:
-                    old_uuids.add(t_old.uuid)
-                    t_old.uuid = t.uuid
-            else:
-                self.sess.add(t)
-
-        self.sess.commit()
-
-        # for existing tiles that were updated, possibly delete the tile image data
-        for uuid in old_uuids:
-            if uuid == null_digest():
-                continue
-
-            if not self.sess.query(mt.Tile).filter(mt.Tile.uuid == uuid).count():
-                # no tile references this file uuid anymore; delete
-                os.remove(mt.Tile(uuid=uuid).path())
-
-        self.pending = []
-
-
