@@ -30,7 +30,7 @@ def get_img_chunk (mode, zoom, x, y):
 
 def get_zoom_tile (mode, zoom, x, y):
   file = tile_file(mode, zoom, x, y)
-  if file != None and os.path.exists(file):
+  if file != None:
     img = open(file)
     return img.convert("RGB")
   else:

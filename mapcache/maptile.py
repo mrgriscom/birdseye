@@ -8,6 +8,7 @@ import os.path
 from glob import glob
 from StringIO import StringIO
 from contextlib import closing
+import Image
 import mapdownload # argh circular import
 
 from sqlalchemy import create_engine, Column, DateTime, Integer, String, LargeBinary, ForeignKey, CheckConstraint, Index
@@ -45,9 +46,7 @@ class Tile(Base):
 
     def _data(self, data=None, file_type=None):
         if not file_type:
-            layer = settings.LAYERS.get(self.layer)
-            if layer:
-                file_type = layer.get('file_type')
+            file_type = self._layer_property('file_type')
         return TileData(uuid=self.uuid, data=data, file_type=file_type)
 
     def save(self, data, hashfunc, file_type=None, sess=None):
@@ -65,6 +64,21 @@ class Tile(Base):
     def load(self, sess=None):
         return self._data().load(sess)
 
+    def img(self, sess=None, transparent=None):
+        if transparent is None:
+            transparent = self._layer_property('overlay')
+
+        f = self.open(sess)
+        if f:
+            with f:
+                img_ = Image.open(f)
+                return img_.convert('RGBA' if transparent else 'RGB')
+
+    def _layer_property(self, prop):
+        layer = settings.LAYERS.get(self.layer)
+        if layer:
+            return layer.get(prop)
+
     def url(self):
         """compute the original mapserver url for this tile"""
         return mapdownload.tile_url((self.z, self.x, self.y), self.layer)
@@ -78,6 +92,11 @@ class Tile(Base):
         if max_depth:
             q = q.filter(Tile.z <= self.z + max_depth)
         return q
+
+    # TODO not passing 'sess' causes error on 'null' tiles
+    # should i assume we should never call these funcs on tiles we don't expect data to exist for?
+    # ie, if no data for tile, we must show the 'broken' tile?
+    # i definitely don't think we should be doing lookups on uuids we know don't exist (null, etc.)
 
 class TileData(Base):
     __tablename__ = 'tdata'
@@ -152,10 +171,10 @@ class TileData(Base):
             os.remove(path)
 
     def open(self, sess=None):
-        return self.open_file() or self.open_blob(sess)
+        return _getdata(self.open_file, lambda: self.open_blob(sess))
 
     def load(self, sess=None):
-        return self.load_file() or self.load_blob(sess)
+        return _getdata(self.load_file, lambda: self.load_blob(sess))
 
     def open_blob(self, sess):
         """return file-like object for tile data from database; None if no db entry"""
@@ -181,6 +200,13 @@ class TileData(Base):
         if f:
             with f:
                 return f.read()
+
+def _getdata(from_file, from_db):
+    """prioritize checking db or filesystem first, based on current tile storage setting"""
+    if settings.TILE_STORE_BLOB:
+        return from_db() or from_file()
+    else:
+        return from_file() or from_db()
 
 class Region(Base):
     """named regions / tile download areas"""

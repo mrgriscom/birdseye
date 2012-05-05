@@ -169,17 +169,23 @@ class AggregationIndex(object):
             except KeyError:
                 return None
 
-def to_quadindex(z, x, y):
+def to_quadindex(z, x, y, alphabet=None):
     def binary(h, k):
         return [(h / 2**i) % 2 for i in range(k - 1, -1, -1)]
 
-    quad = [2 * j + i for i, j in zip(*(binary(h, z) for h in (x, y)))]
-    return ''.join(str(q) for q in quad)
+    def to_char(q):
+        return alphabet[q] if alphabet is not None else str(q)
 
-def from_quadindex(ix):
+    quad = [2 * j + i for i, j in zip(*(binary(h, z) for h in (x, y)))]
+    return ''.join(to_char(q) for q in quad)
+
+def from_quadindex(ix, alphabet=None):
+    def from_char(c):
+        return alphabet.index(c) if alphabet is not None else int(c)
+
     def unquad(ix):
         for c in ix:
-            q = int(c)
+            q = from_char(c)
             yield (q % 2, q / 2)
 
     def from_binary(v):

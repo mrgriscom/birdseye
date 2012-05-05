@@ -36,16 +36,18 @@ def tile_url((zoom, x, y), layer):
         if hasattr(urlgen, '__call__'):
             L['_tileurl'] = urlgen
         else:
-            L['_tileurl'] = precompile_tile_url(urlgen)
+            L['_tileurl'] = precompile_tile_url(urlgen, L.get('file_type'))
     return L['_tileurl'](zoom, x, y)
 
-def precompile_tile_url(template):
+def precompile_tile_url(template, file_type):
     """precompile the tile url format into a form that can be templated efficiently"""
     replacements = {
         '{z}': '%(z)d',
         '{x}': '%(x)d',
         '{y}': '%(y)d',
+        '{-y}': '%(inv_y)d',
         '{qt}': '%(qt)s',
+        '{type}': file_type or '',
     }
 
     shards = []
@@ -69,6 +71,7 @@ def precompile_tile_url(template):
             shard = shards[(x + y) % len(shards)]
         if has_qt:
             qt = u.to_quadindex(z, x, y)
+        inv_y = 2**z - 1 - y
         return fmtstr % locals()
     return _url
 
