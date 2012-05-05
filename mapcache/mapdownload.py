@@ -46,15 +46,14 @@ def precompile_tile_url(template, file_type):
         '{x}': '%(x)d',
         '{y}': '%(y)d',
         '{-y}': '%(inv_y)d',
-        '{qt}': '%(qt)s',
         '{type}': file_type or '',
     }
 
     shards = []
-    shard_match = re.search(r'\{s:([^\}]+)\}', template)
+    shard_match = re.search(r'\{s:(?P<spec>[^\}]+)\}', template)
     if shard_match:
         shard_tag = shard_match.group(0)
-        shard_spec = shard_match.group(1)
+        shard_spec = shard_match.group('spec')
 
         if '-' in shard_spec:
             min, max = (int(k) for k in shard_spec.split('-'))
@@ -63,14 +62,21 @@ def precompile_tile_url(template, file_type):
             shards = list(shard_spec)
         replacements[shard_tag] = '%(shard)s'
 
-    has_qt = '{qt}' in template
+    make_qt = None
+    qt_match = re.search(r'\{qt(:(?P<spec>[^\}]+))?\}', template)
+    if qt_match:
+        qt_tag = qt_match.group(0)
+        qt_spec = qt_match.group('spec')
+
+        make_qt = lambda z, x, y: u.to_quadindex(z, x, y, qt_spec)
+        replacements[qt_tag] = '%(qt)s'
 
     fmtstr = reduce(lambda s, (old, new): new.join(s.split(old)), replacements.iteritems(), template)
     def _url(z, x, y):
         if shards:
             shard = shards[(x + y) % len(shards)]
-        if has_qt:
-            qt = u.to_quadindex(z, x, y)
+        if make_qt:
+            qt = make_qt(z, x, y)
         inv_y = 2**z - 1 - y
         return fmtstr % locals()
     return _url

@@ -18,7 +18,7 @@ import nav.texture
 
 class LayersHandler(web.RequestHandler):
     def get(self):
-        payload = [{'id': k, 'name': settings.LAYERS[k].get('name', k)} for k in settings.LAYERS.keys()]
+        payload = sorted([{'id': k, 'name': settings.LAYERS[k].get('name', k)} for k in settings.LAYERS.keys()], key=lambda l: l['name'])
         self.set_header('Content-Type', 'text/json')
         self.write(json.dumps(payload))
 
