@@ -24,7 +24,7 @@ function draw_pinpoint(highlight, halo, ctx, w, h) {
     }
 }
 
-function Region(map) {
+function RegionPoly(map) {
     var ICON_DEFAULT = render_marker(function(ctx, w, h) { draw_pinpoint(false, false, ctx, w, h); }, 20, 20);
     var ICON_ACTIVE = render_marker(function(ctx, w, h) { draw_pinpoint(true, true, ctx, w, h); }, 20, 20);
     var ICON_NEXT = render_marker(function(ctx, w, h) { draw_pinpoint(false, true, ctx, w, h); }, 20, 20);
@@ -41,7 +41,6 @@ function Region(map) {
 		draggable: true,
 		icon: ICON_DEFAULT
 	    });
-
 	var r = this;
 	marker.on('drag', function(e) {
 		r.vertexes.splice(r.find_point(marker), 1, marker.getLatLng());
@@ -53,30 +52,34 @@ function Region(map) {
 
 	map.addLayer(marker);
 	this.insert_point(marker);
-	this.update();
-
 	this.set_active(marker);
+	this.update();
+    }
+
+    this.delete_point = function(p) {
+	var new_active = (p == this.active ? this.adjacent_point(p, false) : this.active);
+
+	map.removeLayer(p);
+	this.remove_point(p);
+	this.set_active(new_active);
+	this.update();
     }
 
     this.set_active = function(p) {
-	if (this.active) {
-	    this.active.setIcon(ICON_DEFAULT);
-	    var next = this.next_point(this.active);
-	    if (next) {
-		next.setIcon(ICON_DEFAULT);
+	var r = this;
+	var set_icons = function(on) {
+	    if (r.active) {
+		r.active.setIcon(on ? ICON_ACTIVE : ICON_DEFAULT);
+		var next = r.adjacent_point(r.active, true);
+		if (next) {
+		    next.setIcon(on ? ICON_NEXT : ICON_DEFAULT);
+		}
 	    }
 	}
 
+	set_icons(false);
 	this.active = p;
-	if (this.active == null) {
-	    return;
-	}
-
-	this.active.setIcon(ICON_ACTIVE);
-	var next = this.next_point(this.active);
-	if (next) {
-	    next.setIcon(ICON_NEXT);
-	}
+	set_icons(true);
     }
 
     this.insert_point = function(p) {
@@ -85,40 +88,26 @@ function Region(map) {
 	this.vertexes.splice(i + 1, 0, p.getLatLng());
     }
 
-    this.delete_point = function(p) {
-	if (p == null) {
-	    return;
-	}
-
-	var active = this.active;
-	if (p == active) {
-	    active = this.prev_point(p);
-	}
-
+    this.remove_point = function(p) {
 	var i = this.find_point(p);
 	this.points.splice(i, 1);
 	this.vertexes.splice(i, 1);
+    }
 
-	this.set_active(active);
-	this.update();
-	map.removeLayer(p);
+    this.delete_active = function() {
+	if (this.active) {
+	    this.delete_point(this.active);
+	}
     }
 
     this.find_point = function(p) {
 	return this.points.indexOf(p);
     }
 
-    this.next_point = function(p) {
+    this.adjacent_point = function(p, next) {
 	if (this.points.length > 1) {
-	    return this.points[(this.find_point(p) + 1) % this.points.length];
-	} else {
-	    return null;
-	}
-    }
-
-    this.prev_point = function(p) {
-	if (this.points.length > 1) {
-	    return this.points[(this.find_point(p) + this.points.length - 1) % this.points.length];
+	    var offset = (next ? 1 : -1);
+	    return this.points[(this.find_point(p) + this.points.length + offset) % this.points.length];
 	} else {
 	    return null;
 	}
@@ -133,11 +122,21 @@ $(document).ready(function() {
 	var map = new L.Map('map');
 	map.setView(new L.LatLng(30., 0.), 2);
 
-	var r = new Region(map);
+	var r = new RegionPoly(map);
 	map.on('click', function(e) { r.new_point(e); });
-
 	shortcut.add('backspace', function() {
-		r.delete_point(r.active);
+		r.delete_active();
+	    });
+
+	//debug
+	shortcut.add('q', function() {
+		var PREC = 5;
+		var coords = [];
+		$.each(r.vertexes, function(i, ll) {
+			coords.push(ll.lat.toFixed(PREC) + ',' + ll.lng.toFixed(PREC));
+		    });
+		var bound = coords.join(' ');
+		console.log(bound);
 	    });
 
 	$.get('/layers', null, function(data) {
