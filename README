@@ -11,9 +11,25 @@ sqlalchemy >= 0.7
 numpy
 PIL
 pyopengl
-polygon
+polygon (2.0.x?)
 ncurses
 yaml
 lxml
 
 i should fill this out with stuff
+
+
+
+sample tile url spec: 'http://{s:0-3}.mapserver.org/tile/{z}/{x}/{y}'
+
+available directives:
+
+{z} - zoom level
+{x} - tile x coordinate, [0, 2^zoom)
+{y} - tile y coordinate, [0, 2^zoom)
+{-y} - tile y coordinate, but numbered starting in the south and increasing towards the north
+{qt} - quadtree index to tile
+{qt:ABCD} - quadtree index, but with customized symbols to refer to each quadrant
+{s:0-3} - server shard (0, 1, 2, 3, in this example)
+{s:abc} - server shard (a, b, c, in this example)
+{type} - the specified file type for the layer
