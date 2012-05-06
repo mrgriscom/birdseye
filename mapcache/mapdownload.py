@@ -34,7 +34,11 @@ def tile_url((zoom, x, y), layer):
             urlgen = urlgen()
 
         if hasattr(urlgen, '__call__'):
-            L['_tileurl'] = urlgen
+            def format_url(z, x, y):
+                template = urlgen(z, x, y)
+                compiled = precompile_tile_url(template, L.get('file_type'))
+                return compiled(z, x, y)
+            L['_tileurl'] = format_url
         else:
             L['_tileurl'] = precompile_tile_url(urlgen, L.get('file_type'))
     return L['_tileurl'](zoom, x, y)

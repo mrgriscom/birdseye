@@ -50,8 +50,8 @@ LAYERS = {
         # tile_url may also be a function, called once the first time this
         # layer is accessed, returning either:
         #   - a template string
-        #   - another function [(z, x, y) => tileurl] to be called for
-        #     every tile access
+        #   - another function [(z, x, y) => url template str] to be called
+        #     for every tile access
         'file_type': 'png',
         'name': 'sample layer',
         'cacheable': True,
