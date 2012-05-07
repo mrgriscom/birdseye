@@ -3,7 +3,7 @@
 function draw_pinpoint(highlight, halo, ctx, w, h) {
     var circle = function(rad) {
 	ctx.beginPath();
-	ctx.arc(.5*w, .5*h, rad, 0, 2*Math.PI);
+	ctx.arc(.5*w, .5*h, rad, 0, 2*Math.PI, false);
 	ctx.closePath();
     }
 
@@ -37,13 +37,16 @@ function RegionPoly(map) {
     map.addLayer(this.poly);
 
     this.new_point = function(e) {
-	var marker = new L.Marker(e.latlng, {
+	var marker = new L.Marker(this.rectify_lon(e.latlng), {
 		draggable: true,
 		icon: ICON_DEFAULT
 	    });
 	var r = this;
 	marker.on('drag', function(e) {
-		r.vertexes.splice(r.find_point(marker), 1, marker.getLatLng());
+		var pos = r.rectify_lon(marker.getLatLng(), r.adjacent_point(marker, false));
+		// update marker with corrected position
+		marker.setLatLng(pos);
+		r.vertexes.splice(r.find_point(marker), 1, pos);
 		r.update();
 	    });
 	marker.on('click', function(e) {
@@ -54,6 +57,18 @@ function RegionPoly(map) {
 	this.insert_point(marker);
 	this.set_active(marker);
 	this.update();
+    }
+
+    this.rectify_lon = function(ll, ref) {
+	// correct lon so it's within 180 degrees of lon of ref point;
+	// this lets us handle polygons that straddle the IDL
+	ref = ref || this.active;
+	if (ref != null) {
+	    var rect_lon = anglenorm(ll.lng, 180. - ref.getLatLng().lng);
+	    return new L.LatLng(ll.lat, rect_lon, true);
+	} else {
+	    return ll;
+	}
     }
 
     this.delete_point = function(p) {
@@ -116,10 +131,27 @@ function RegionPoly(map) {
     this.update = function() {
 	this.poly.setLatLngs(this.vertexes);
     }
+
+    this.bounds = function() {
+	var coords = [];
+	$.each(this.vertexes, function(i, ll) {
+		coords.push([ll.lat, anglenorm(ll.lng)]);
+	    });
+	return coords;
+    }
+
+    this.bounds_str = function(prec) {
+	prec = prec || 5;
+	var cfmt = [];
+	$.each(this.bounds(), function(i, c) {
+		cfmt.push(c[0].toFixed(prec) + ',' + c[1].toFixed(prec));
+	    });
+	return cfmt.join(' ');
+    }
 }
 
 $(document).ready(function() {
-	var map = new L.Map('map');
+	var map = new L.Map('map', {worldCopyJump: false});
 	map.setView(new L.LatLng(30., 0.), 2);
 
 	var r = new RegionPoly(map);
@@ -130,13 +162,7 @@ $(document).ready(function() {
 
 	//debug
 	shortcut.add('q', function() {
-		var PREC = 5;
-		var coords = [];
-		$.each(r.vertexes, function(i, ll) {
-			coords.push(ll.lat.toFixed(PREC) + ',' + ll.lng.toFixed(PREC));
-		    });
-		var bound = coords.join(' ');
-		console.log(bound);
+		console.log(r.bounds_str());
 	    });
 
 	$.get('/layers', null, function(data) {
@@ -229,3 +255,17 @@ function render_marker(draw, w, h, anchor) {
     return new icon();
 }
 
+function mod(a, b) {
+    if (a < 0) {
+	return ((a % b) + b) % b;
+    } else {
+	return a % b;
+    }
+}
+
+function anglenorm(a, offset) {
+    if (offset == null) {
+	offset = 180.;
+    }
+    return mod(a + offset, 360.) - offset;
+}
