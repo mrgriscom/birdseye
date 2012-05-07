@@ -24,7 +24,7 @@ function draw_pinpoint(highlight, halo, ctx, w, h) {
     }
 }
 
-function RegionPoly(map) {
+function RegionPoly(map, points) {
     var ICON_DEFAULT = render_marker(function(ctx, w, h) { draw_pinpoint(false, false, ctx, w, h); }, 20, 20);
     var ICON_ACTIVE = render_marker(function(ctx, w, h) { draw_pinpoint(true, true, ctx, w, h); }, 20, 20);
     var ICON_NEXT = render_marker(function(ctx, w, h) { draw_pinpoint(false, true, ctx, w, h); }, 20, 20);
@@ -34,7 +34,10 @@ function RegionPoly(map) {
     this.poly = new L.Polygon(this.vertexes);
     this.active = null;
 
-    map.addLayer(this.poly);
+    this.init = function() {
+	this.import_points(points || []);
+	map.addLayer(this.poly);
+    }
 
     this.new_point = function(e) {
 	var marker = new L.Marker(this.rectify_lon(e.latlng), {
@@ -132,6 +135,13 @@ function RegionPoly(map) {
 	this.poly.setLatLngs(this.vertexes);
     }
 
+    this.import_points = function(points) {
+	var r = this;
+	$.each(points, function(i, p) {
+		r.new_point({latlng: new L.LatLng(p[0], p[1])});
+	    });
+    }
+
     this.bounds = function() {
 	var coords = [];
 	$.each(this.vertexes, function(i, ll) {
@@ -148,6 +158,12 @@ function RegionPoly(map) {
 	    });
 	return cfmt.join(' ');
     }
+
+    this.is_degenerate = function() {
+	return this.vertexes.length < 3;
+    }
+
+    this.init();
 }
 
 $(document).ready(function() {
