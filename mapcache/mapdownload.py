@@ -217,10 +217,10 @@ def tile_counts(tiles):
 class TileEnumerator(threading.Thread):
     """a monitorable thread to enumerate all tiles in a download region"""
 
-    def __init__(self, region, depth):
+    def __init__(self, region, depth, layer=None):
         threading.Thread.__init__(self)
 
-        self.tess = mt.RegionTessellation(region, depth)
+        self.tess = mt.RegionTessellation(region, depth, min_zoom=u.layer_property(layer, 'min_depth', 0))
         self.est_num_tiles = self.tess.size_estimate()
         self.tiles = set()
         self.count = 0

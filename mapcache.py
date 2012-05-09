@@ -188,7 +188,7 @@ def download(region, overlay, max_depth, refresh_mode):
 def download_curses(w, region, overlay, max_depth, refresh_mode):
     polygon = region.merc_poly()
  
-    te = mapdownload.TileEnumerator(polygon, max_depth)
+    te = mapdownload.TileEnumerator(polygon, max_depth, overlay)
     monitor(w, 0, te, 'Enumerating', 15, 3)
 
     print_tile_counts(w, mapdownload.tile_counts(te.tiles), 'Tiles in region', 4, 2, max_depth=max_depth)

@@ -59,16 +59,15 @@ class TileCoverHandler(web.RequestHandler):
         self.set_header('Content-Type', 'text/json')
         self.write(json.dumps(payload))
 
+sess = maptile.dbsess()
+application = web.Application([
+    (r'/layers', LayersHandler),
+    (r'/tile/([A-Za-z0-9_-]+)/([0-9]+)/([0-9]+),([0-9]+)', TileHandler, {'dbsess': sess}),
+    (r'/tilecover/([A-Za-z0-9_-]+)/([0-9]+)/([0-9]+),([0-9]+)', TileCoverHandler, {'dbsess': sess}),
+    (r'/static/(.*)', web.StaticFileHandler, {'path': '/home/drew/dev/birdseye/web/static/'}),
+])
+
 if __name__ == "__main__":
 
-    sess = maptile.dbsess()
-
-    application = web.Application([
-        (r'/layers', LayersHandler),
-        (r'/tile/([A-Za-z0-9_-]+)/([0-9]+)/([0-9]+),([0-9]+)', TileHandler, {'dbsess': sess}),
-        (r'/tilecover/([A-Za-z0-9_-]+)/([0-9]+)/([0-9]+),([0-9]+)', TileCoverHandler, {'dbsess': sess}),
-        (r'/static/(.*)', web.StaticFileHandler, {'path': '/home/drew/dev/birdseye/web/static/'}),
-    ])
     application.listen(10101)
-
     IOLoop.instance().start()

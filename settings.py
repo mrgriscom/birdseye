@@ -54,8 +54,11 @@ LAYERS = {
         #     for every tile access
         'file_type': 'png',
         'name': 'sample layer',
+
+        # optional
         'cacheable': True,
         'overlay': False,
+        'min_depth': 0,
     },
     'osmmapnik': {
         'tile_url': 'http://{s:abc}.tile.openstreetmap.org/{z}/{x}/{y}.png',

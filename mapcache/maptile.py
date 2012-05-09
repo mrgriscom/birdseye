@@ -75,9 +75,7 @@ class Tile(Base):
                 return img_.convert('RGBA' if transparent else 'RGB')
 
     def _layer_property(self, prop):
-        layer = settings.LAYERS.get(self.layer)
-        if layer:
-            return layer.get(prop)
+        return u.layer_property(self.layer, prop)
 
     def url(self):
         """compute the original mapserver url for this tile"""
@@ -171,10 +169,10 @@ class TileData(Base):
             os.remove(path)
 
     def open(self, sess=None):
-        return _getdata(self.open_file, lambda: self.open_blob(sess))
+        return _getdata(self.open_file, lambda: self.open_blob(sess) if sess else None)
 
     def load(self, sess=None):
-        return _getdata(self.load_file, lambda: self.load_blob(sess))
+        return _getdata(self.load_file, lambda: self.load_blob(sess) if sess else None)
 
     def open_blob(self, sess):
         """return file-like object for tile data from database; None if no db entry"""
@@ -210,6 +208,8 @@ def _getdata(from_file, from_db):
 
 class Region(Base):
     """named regions / tile download areas"""
+
+    GLOBAL_NAME = 'world'
 
     __tablename__ = 'regions'
 
@@ -283,7 +283,7 @@ class Region(Base):
     @staticmethod
     def world():
         """region covering entire world"""
-        return Region('world', [
+        return Region(Region.GLOBAL_NAME, [
                 # delta-lons must be < 180
                 ( 90, -180), ( 90, -60), ( 90,  60), ( 90,  180),
                 (-90,  180), (-90,  60), (-90, -60), (-90, -180), 
@@ -308,7 +308,14 @@ def dbsess(connector=settings.TILE_DB, echo=False):
     """create a connector to the tile database"""
     engine = create_engine(connector, echo=echo)
     Base.metadata.create_all(engine)
-    return sessionmaker(bind=engine)()
+    sess = sessionmaker(bind=engine)()
+
+    # initialize 'global' region
+    if not sess.query(Region).filter(Region.name == Region.GLOBAL_NAME).count():
+        sess.add(Region.world())
+        sess.commit()
+
+    return sess
 
 
 
@@ -471,8 +478,9 @@ def quad_children(x, y):
 
 class RegionTessellation(object):
     """an enumerator of all the tiles within a region"""
-    def __init__(self, polygon, max_zoom, offset=1.):
+    def __init__(self, polygon, max_zoom, offset=1., min_zoom=0):
         self.polygon = polygon
+        self.min_zoom = min_zoom
         self.max_zoom = max_zoom
         self._z = MercZoom(offset)
 
@@ -481,7 +489,8 @@ class RegionTessellation(object):
 
     def next(self):
         for t in tile(self.polygon, self._z.extents(self.max_zoom), 0, (0, 0)):
-            yield t
+            if t[0] >= self.min_zoom:
+                yield t
 
     def size_estimate(self, compensate=True):
         """estimate the number of tiles contained within"""
@@ -492,7 +501,7 @@ class RegionTessellation(object):
         base_area = self.polygon.area()
 
         def z_areas():
-            for z in range(0, self.max_zoom + 1):
+            for z in range(self.min_zoom, self.max_zoom + 1):
                 if z <= self.max_zoom - len(ymins):
                     yield base_area
                 else:

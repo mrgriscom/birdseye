@@ -176,6 +176,11 @@ $(document).ready(function() {
 		r.delete_active();
 	    });
 
+
+	map.on('mousemove', function(e) {
+		update_info(e, map);
+	    });
+
 	//debug
 	shortcut.add('q', function() {
 		console.log(r.bounds_str());
@@ -186,9 +191,7 @@ $(document).ready(function() {
 		$.each(data, function(i, e) {
 			var layer = new L.TileLayer('/tile/' + e.id + '/{z}/{x},{y}');
 			layers[e.name] = layer;
-			map.addLayer(layer);
 		    });
-
 		var layersControl = new L.Control.Layers(layers, {});
 		map.addControl(layersControl);
 
@@ -206,7 +209,7 @@ $(document).ready(function() {
 		}
 		//map.addLayer(canvas_layer);
 
-		/*
+		/*	       
 var nexrad = new L.TileLayer.WMS("http://mesonet.agron.iastate.edu/cgi-bin/wms/nexrad/n0r.cgi", {
     layers: 'nexrad-n0r-900913',
     format: 'image/png',
@@ -215,7 +218,6 @@ var nexrad = new L.TileLayer.WMS("http://mesonet.agron.iastate.edu/cgi-bin/wms/n
 });
 map.addLayer(nexrad);
 		*/
-
 
 
 	    }, 'json');
@@ -230,6 +232,14 @@ ignore new marker event if already a marker that exact spot
 
  */
 
+
+function update_info(e, map) {
+    var $info = $('#info');
+    $info.find('#lat').text(e.latlng.lat.toFixed(5));
+    $info.find('#lon').text(e.latlng.lng.toFixed(5));
+    $info.find('#zoom').text(map.getZoom());
+    $info.find('#effzoom').text(map.getZoom() + Math.floor(Math.log(Math.cos(Math.PI * e.latlng.lat / 180.)) / Math.log(0.5)));
+}
 
 
 
