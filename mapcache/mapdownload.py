@@ -53,6 +53,9 @@ def precompile_tile_url(template, file_type):
         '{type}': file_type or '',
     }
 
+    # protect '%' in original string as we convert to format string
+    template = '%%'.join(template.split('%'))
+
     shards = []
     shard_match = re.search(r'\{s:(?P<spec>[^\}]+)\}', template)
     if shard_match:

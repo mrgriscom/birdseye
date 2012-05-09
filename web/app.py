@@ -41,6 +41,15 @@ class TileHandler(web.RequestHandler):
 #                self.write(f.read())
             self.set_status(404)
 
+class TileURLHandler(web.RequestHandler):
+    def get(self, layer, z, x, y):
+        z = int(z)
+        x = int(x)
+        y = int(y)
+
+        self.set_header('Content-Type', 'text/plain')
+        self.write(maptile.Tile(layer=layer, z=z, x=x, y=y).url())
+
 class TileCoverHandler(web.RequestHandler):
     def initialize(self, dbsess):
         self.sess = dbsess
@@ -63,6 +72,7 @@ sess = maptile.dbsess()
 application = web.Application([
     (r'/layers', LayersHandler),
     (r'/tile/([A-Za-z0-9_-]+)/([0-9]+)/([0-9]+),([0-9]+)', TileHandler, {'dbsess': sess}),
+    (r'/tileurl/([A-Za-z0-9_-]+)/([0-9]+)/([0-9]+),([0-9]+)', TileURLHandler),
     (r'/tilecover/([A-Za-z0-9_-]+)/([0-9]+)/([0-9]+),([0-9]+)', TileCoverHandler, {'dbsess': sess}),
     (r'/static/(.*)', web.StaticFileHandler, {'path': '/home/drew/dev/birdseye/web/static/'}),
 ])
