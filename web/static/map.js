@@ -166,6 +166,55 @@ function RegionPoly(map, points) {
     this.init();
 }
 
+function tile_url(spec, zoom, point) {
+    var replace = function(key, sub) {
+	spec = spec.replace(new RegExp('{' + key + '(:[^}]+)?}', 'g'), function(match, submatch) {
+		return sub(submatch == null ? null : submatch.substring(1));
+	    });
+    }
+
+    replace('z', function() { return zoom; });
+    replace('x', function() { return point.x; });
+    replace('y', function() { return point.y; });
+    replace('-y', function() { return Math.pow(2, zoom) - 1 - point.y; });
+    replace('s', function(arg) {
+	    var k = point.x + point.y;
+	    if (arg.indexOf('-') == -1) {
+		return arg.split('')[k % arg.length];
+	    } else {
+		var bounds = arg.split('-');
+		var min = +bounds[0];
+		var max = +bounds[1];
+		return min + k % (max - min + 1);
+	    }
+	});
+    replace('qt', function(arg) {
+	    var bin_digit = function(h, i) {
+		return Math.floor(h / Math.pow(2, i) % 2);
+	    }
+
+	    var qt = '';
+	    for (var i = zoom - 1; i >= 0; i--) {
+		var q = 2 * bin_digit(point.y, i) + bin_digit(point.x, i);
+		qt += (arg != null ? arg[q] : q);
+	    }
+	    return qt;
+	});
+    replace('custom', function(arg) {
+	    // note: this blocks the browser due to need for synchronous request to server
+	    var url = null;
+	    $.ajax('/tileurl/' + arg + '/' + zoom + '/' + point.x + ',' + point.y, {
+		    success: function(data) {
+			url = data;
+		    },
+		    async: false
+		});
+	    return url;
+	});
+
+    return spec;
+}
+
 $(document).ready(function() {
 	var map = new L.Map('map', {worldCopyJump: false});
 	map.setView(new L.LatLng(30., 0.), 2);
@@ -191,6 +240,13 @@ $(document).ready(function() {
 		$.each(data, function(i, e) {
 			var layer = new L.TileLayer('/tile/' + e.id + '/{z}/{x},{y}');
 			layers[e.name] = layer;
+
+			var reflayer = new L.TileLayer();
+			reflayer.getTileUrl = function(tilePoint, zoom) {
+			    // warning: referer will be leaked to map server!
+			    return tile_url(e.url, zoom, tilePoint);
+			};
+			layers['+' + e.name] = reflayer;
 		    });
 		var layersControl = new L.Control.Layers(layers, {});
 		map.addControl(layersControl);

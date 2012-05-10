@@ -18,7 +18,21 @@ import nav.texture
 
 class LayersHandler(web.RequestHandler):
     def get(self):
-        payload = sorted([{'id': k, 'name': settings.LAYERS[k].get('name', k)} for k in settings.LAYERS.keys()], key=lambda l: l['name'])
+        def mk_layer(key):
+            L = settings.LAYERS[key]
+            info = {'id': key, 'name': L.get('name', key)}
+
+            url_spec = L['tile_url']
+            if hasattr(url_spec, '__call__'):
+                url_spec = url_spec()
+            if hasattr(url_spec, '__call__'):
+                url_spec = '{custom:%s}' % key
+            url_spec = L.get('file_type', '').join(url_spec.split('{type}'))
+            info['url'] = url_spec
+
+            return info
+
+        payload = sorted((mk_layer(k) for k in settings.LAYERS.keys()), key=lambda l: l['name'])
         self.set_header('Content-Type', 'text/json')
         self.write(json.dumps(payload))
 
