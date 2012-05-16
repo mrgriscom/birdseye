@@ -216,8 +216,10 @@ function tile_url(spec, zoom, point) {
 }
 
 $(document).ready(function() {
+	var DEFAULT_ZOOM = 2;
+
 	var map = new L.Map('map', {worldCopyJump: false});
-	map.setView(new L.LatLng(30., 0.), 2);
+	map.setView(new L.LatLng(30., 0.), DEFAULT_ZOOM);
 
 	var r = new RegionPoly(map);
 	map.on('click', function(e) { r.new_point(e); });
@@ -250,11 +252,14 @@ $(document).ready(function() {
 		map.panBy(new L.Point(20, 20));
 	    });
 
-	$.get('/layers', null, function(data) {
+	$.get('/layers', {default_zoom: DEFAULT_ZOOM}, function(data) {
 		var layers = {};
 		$.each(data, function(i, e) {
 			var layer = new L.TileLayer('/tile/' + e.id + '/{z}/{x},{y}');
 			layers[e.name] = layer;
+			if (e.default) {
+			    map.addLayer(layer);
+			}
 
 			var reflayer = new L.TileLayer();
 			reflayer.getTileUrl = function(tilePoint, zoom) {

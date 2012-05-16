@@ -16,13 +16,26 @@ from datetime import datetime
 import time
 import email
 
-from mapcache import maptile
+from mapcache import maptile as mt
 import nav.texture
+
+from sqlalchemy import func
 
 class LayersHandler(web.RequestHandler):
     """information about available layers"""
 
+    def initialize(self, dbsess=None):
+        self.sess = dbsess
+
     def get(self):
+        deflayer = None
+        if self.sess:
+            # set the layer with the most tiles at the initial zoom level as the default layer
+            defzoom = int(self.get_argument('default_zoom', '0'))
+            tallies = list(self.sess.query(func.count('*'), mt.Tile.layer).filter(mt.Tile.z == defzoom).group_by(mt.Tile.layer))
+            if tallies:
+                deflayer = max(tallies)[1]
+
         def mk_layer(key):
             L = settings.LAYERS[key]
             info = {
@@ -38,6 +51,9 @@ class LayersHandler(web.RequestHandler):
                 url_spec = '{custom:%s}' % key
             url_spec = L.get('file_type', '').join(url_spec.split('{type}'))
             info['url'] = url_spec
+
+            if key == deflayer:
+                info['default'] = True
 
             return info
 
@@ -56,7 +72,7 @@ class TileHandler(web.RequestHandler):
         x = int(x)
         y = int(y)
 
-        t = sess.query(maptile.Tile).get((layer, z, x, y))
+        t = sess.query(mt.Tile).get((layer, z, x, y))
         if not t:
             self.set_status(404)
             return
@@ -101,7 +117,7 @@ class TileURLHandler(web.RequestHandler):
         y = int(y)
 
         self.set_header('Content-Type', 'text/plain')
-        self.write(maptile.Tile(layer=layer, z=z, x=x, y=y).url())
+        self.write(mt.Tile(layer=layer, z=z, x=x, y=y).url())
 
 class TileCoverHandler(web.RequestHandler):
     """return metadata describing the coverage over this tile at other zoom levels"""
@@ -114,7 +130,7 @@ class TileCoverHandler(web.RequestHandler):
         x = int(x)
         y = int(y)
 
-        desc = maptile.Tile(layer=layer, z=z, x=x, y=y).get_descendants(self.sess, 8)
+        desc = mt.Tile(layer=layer, z=z, x=x, y=y).get_descendants(self.sess, 8)
         def rel_tile(t):
             zdiff = t.z - z
             return {'z': zdiff, 'x': t.x - x * 2**zdiff, 'y': t.y - y * 2**zdiff}
@@ -127,9 +143,9 @@ class RootContentHandler(web.StaticFileHandler):
     def get(self):
         super(RootContentHandler, self).get('map.html')
 
-sess = maptile.dbsess()
+sess = mt.dbsess()
 application = web.Application([
-    (r'/layers', LayersHandler),
+    (r'/layers', LayersHandler, {'dbsess': sess}),
     (r'/tile/([A-Za-z0-9_-]+)/([0-9]+)/([0-9]+),([0-9]+)', TileHandler, {'dbsess': sess}),
     (r'/tileurl/([A-Za-z0-9_-]+)/([0-9]+)/([0-9]+),([0-9]+)', TileURLHandler),
     (r'/tilecover/([A-Za-z0-9_-]+)/([0-9]+)/([0-9]+),([0-9]+)', TileCoverHandler, {'dbsess': sess}),
