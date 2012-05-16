@@ -58,6 +58,9 @@ class Tile(Base):
         self.uuid = hashfunc(data)
         self._data(data, file_type).save(sess)
 
+    def is_null(self):
+        return self.uuid == mapdownload.null_digest()
+
     def open(self, sess=None):
         return self._data().open(sess)
 

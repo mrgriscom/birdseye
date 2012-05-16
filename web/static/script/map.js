@@ -225,14 +225,29 @@ $(document).ready(function() {
 		r.delete_active();
 	    });
 
-
+	var _p = new ActiveLoc(map);
 	map.on('mousemove', function(e) {
-		update_info(e, map);
+		_p.update(e);
+		_p.refresh_info();
 	    });
+	map.on('zoomend', function() {
+		_p.refresh_info();
+	    });
+	map.on('mouseout', function() {
+		_p.update(null);
+		_p.refresh_info();
+	    });
+	map.on('move', function() {
+		_p.refresh_info();
+	    });
+	_p.refresh_info();
 
 	//debug
 	shortcut.add('q', function() {
 		console.log(r.bounds_str());
+	    });
+	shortcut.add('w', function() {
+		map.panBy(new L.Point(20, 20));
 	    });
 
 	$.get('/layers', null, function(data) {
@@ -281,23 +296,50 @@ map.addLayer(nexrad);
     });
 
 
-/* todo
+function ActiveLoc(map) {
+    this.p = null;
 
-ignore new marker event if already a marker that exact spot
+    this.update = function(mouse_evt) {
+	this.p = (mouse_evt != null ? map.layerPointToContainerPoint(mouse_evt.layerPoint) : null);
+    }
 
-
- */
-
-
-function update_info(e, map) {
-    var $info = $('#info');
-    $info.find('#lat').text(e.latlng.lat.toFixed(5));
-    $info.find('#lon').text(e.latlng.lng.toFixed(5));
-    $info.find('#zoom').text(map.getZoom());
-    $info.find('#effzoom').text(map.getZoom() + Math.floor(Math.log(Math.cos(Math.PI * e.latlng.lat / 180.)) / Math.log(0.5)));
+    this.refresh_info = function() {
+	var ll = (this.p ? map.layerPointToLatLng(map.containerPointToLayerPoint(this.p)) : map.getCenter());
+	update_info(ll, map);
+    }
 }
 
+function update_info(ll, map) {
+    var $info = $('#info');
 
+    var fmt_ll = function(k, dir) {
+	return dir[k >= 0 ? 0 : 1] + Math.abs(k).toFixed(5) + '\xb0';
+    };
+    var tile_coord = function(k) {
+	return Math.floor(k / 256.);
+    };
+    
+    $info.find('#lat').text(fmt_ll(ll.lat, 'NS'));
+    $info.find('#lon').text(fmt_ll(ll.lng, 'EW'));
+    $info.find('#zoom').text(map.getZoom());
+    var effzoom_offset = Math.floor(Math.log(Math.cos(Math.PI * ll.lat / 180.)) / Math.log(0.5));
+    $info.find('#effzoom').text(map.getZoom() + effzoom_offset);
+    $info.find('#zeff')[effzoom_offset == 0 ? 'hide' : 'show']();
+    
+    if (Math.abs(ll.lat) > L.Projection.SphericalMercator.MAX_LATITUDE) {
+	$info.find('#tx').html('&mdash;');
+	$info.find('#ty').html('&mdash;');
+	$info.find('#qt').html('&mdash;');
+    } else {
+	var px = map.project(ll);
+	var tx = tile_coord(px.x);
+	var ty = tile_coord(px.y);
+	var qt = tile_url('{qt}', map.getZoom(), new L.Point(tx, ty)) || '\u2205';
+	$info.find('#tx').text(tx);
+	$info.find('#ty').text(ty);
+	$info.find('#qt').text(qt);
+    }
+}
 
 function make_canvas(w, h) {
     var $canvas = $('<canvas />');

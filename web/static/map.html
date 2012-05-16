@@ -9,13 +9,56 @@
 </head>
 <body>
 
+<style>
+
+body {
+  font-family: sans-serif;
+}
+
+#info {
+  position: absolute;
+  bottom: 20px;
+  left: 20px;
+  padding: 10px;
+  background: rgba(255, 255, 255, .7);
+  border: 5px #aaa solid;
+  border-radius: 20px;
+  -moz-border-radius: 20px;
+  -webkit-border-radius: 20px;
+  text-align: right;
+  font-size: 85%;
+}
+
+#info .data {
+  font-weight: bold;
+  font-size: 120%;
+}
+
+#info #qtlab {
+  text-align: left;
+  font-size: 80%;
+}
+
+#info #qt {
+  font-size: 120%;
+}
+
+</style>
+
 <div id="map" style="height: 100%;"></div>
 
-<div id="info" style="position: absolute; left: 20px; bottom: 20px; background: rgba(255, 255, 255, .5);">
-  <div>lat: <span id="lat" /></div>
-  <div>lon: <span id="lon" /></div>
-  <div>zoom: <span id="zoom" /></div>
-  <div>effzoom: <span id="effzoom" /></div>
+<div id="info">
+  <div class="data" style="min-width: 6em;">
+    <div id="lat"></div>
+    <div id="lon"></div>
+  </div>
+  <div>
+    z<span id="zoom" class="data"></span>
+    <span id="zeff">(<abbr title="effective zoom -- equivalent zoom level at equator, accounting for map distortion">z<sub>e</sub><span id="effzoom" class="data"></span></abbr>)</span>
+    x<span id="tx" class="data"></span>
+    y<span id="ty" class="data"></span>
+  </div>
+  <div id="qtlab">ix:<span id="qt" class="data"></span></div>
 </div>
 
 </body>
