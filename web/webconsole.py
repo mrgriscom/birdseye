@@ -63,30 +63,12 @@ class LayersHandler(web.RequestHandler):
         self.set_header('Content-Type', 'text/json')
         self.write(json.dumps(payload))
 
-class TileHandler(web.RequestHandler):
-    """return tile images"""
-
-    def initialize(self, dbsess):
-        self.sess = dbsess
+class TileRequestHandler(web.RequestHandler):
 
     def get(self, layer, z, x, y):
-        z = int(z)
-        x = int(x)
-        y = int(y)
+        self._get(mt.Tile(layer=layer, z=int(z), x=int(x), y=int(y)))
 
-        t = sess.query(mt.Tile).get((layer, z, x, y))
-        if not t:
-            self.set_status(404)
-            return
-
-        self.return_static(
-            t.load(self.sess) if not t.is_null() else None,
-            t.uuid,
-            t.fetched_on,
-            settings.LAYERS[layer]['file_type']
-        )
-
-    def return_static(self, content, digest, modtime, file_type):
+    def return_static(self, layer, content, digest, modtime):
         self.set_header('Cache-Control', 'public')
         if modtime:
             self.set_header('Last-Modified', modtime)
@@ -104,67 +86,81 @@ class TileHandler(web.RequestHandler):
                 return
         
         if content:
+            file_type = settings.LAYERS[layer]['file_type']
             self.set_header('Content-Type', 'image/' + file_type)
             self.set_header('Content-Length', len(content))
             self.write(content)
         else:
             self.set_status(404)
 
-class TileURLHandler(web.RequestHandler):
+class TileHandler(TileRequestHandler):
+    """return tile images"""
+
+    def initialize(self, dbsess):
+        self.sess = dbsess
+
+    def _get(self, tile):
+        t = sess.query(mt.Tile).get(tile.pk())
+        if not t:
+            self.set_status(404)
+            return
+
+        self.return_static(
+            t.layer,
+            t.load(self.sess) if not t.is_null() else None,
+            t.uuid,
+            t.fetched_on
+        )
+
+class TileURLHandler(TileRequestHandler):
     """return mapserver tile url for layer"""
 
-    def get(self, layer, z, x, y):
-        z = int(z)
-        x = int(x)
-        y = int(y)
-
+    def _get(self, tile):
         self.set_header('Content-Type', 'text/plain')
-        self.write(mt.Tile(layer=layer, z=z, x=x, y=y).url())
+        self.write(tile.url())
 
-def on_tile_download(key, status, data):
-    t, cb = key
-    IOLoop.instance().add_callback(lambda: cb((status, data)))
+def on_tile_download(meta, status, data):
+    IOLoop.instance().add_callback(lambda: meta['callback']((status, data)))
     return (True, None)
 
-class TileProxyHandler(web.RequestHandler):
+class TileProxyHandler(TileRequestHandler):
 
     def initialize(self, tiledl):
         self.tiledl = tiledl
     
     @web.asynchronous
     @gen.engine
-    def get(self, layer, z, x, y):
-        z = int(z)
-        x = int(x)
-        y = int(y)
+    def _get(self, tile):
+        cache = False #(self.get_argument('cache') == 'true')
+        overwrite = False #(self.get_argument('overwrite') == 'true')
 
-        t = mt.Tile(layer=layer, z=z, x=x, y=y)
         def async(callback):
-            self.tiledl.add((t, callback), t.url())
+            self.tiledl.add({
+                    'tile': tile,
+                    'callback': callback,
+                    'cache': cache,
+                    'overwrite': overwrite,
+                }, tile.url())
         stat, data = yield gen.Task(async)
 
         if data:
-            self.set_header('Content-Type', 'image/' + settings.LAYERS[layer]['file_type'])
+            self.set_header('Content-Type', 'image/' + settings.LAYERS[tile.layer]['file_type'])
             self.write(data)
         else:
             self.set_status(404)
         self.finish()
 
-class TileCoverHandler(web.RequestHandler):
+class TileCoverHandler(TileRequestHandler):
     """return metadata describing the coverage over this tile at other zoom levels"""
 
     def initialize(self, dbsess):
         self.sess = dbsess
 
-    def get(self, layer, z, x, y):
-        z = int(z)
-        x = int(x)
-        y = int(y)
-
-        desc = mt.Tile(layer=layer, z=z, x=x, y=y).get_descendants(self.sess, 8)
+    def get(self, tile):
+        desc = tile.get_descendants(self.sess, 8)
         def rel_tile(t):
-            zdiff = t.z - z
-            return {'z': zdiff, 'x': t.x - x * 2**zdiff, 'y': t.y - y * 2**zdiff}
+            zdiff = t.z - tile.z
+            return {'z': zdiff, 'x': t.x - tile.x * 2**zdiff, 'y': t.y - tile.y * 2**zdiff}
         payload = [rel_tile(t) for t in desc]
 
         self.set_header('Content-Type', 'text/json')
