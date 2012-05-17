@@ -13,11 +13,13 @@ class DownloadManager(object):
     a thread! it just mimics one (to manage the worker threads)
     """
 
-    def __init__(self, terminal_statuses, num_workers=10, num_retries=5, limit=1):
+    def __init__(self, terminal_statuses=None, num_workers=10, num_retries=5, limit=1):
         """
         limit -- maximum buffer for processing; this prevents worker threads downloading
           items faster than they can be processed and filling up all memory
         """
+        terminal_statuses = terminal_statuses or [httplib.OK, httplib.NOT_FOUND, httplib.FORBIDDEN, httplib.FOUND]
+
         self.qin = Queue(limit)
         self.qout = Queue(limit)
         self.workers = [DownloadWorker(self.qin, self.qout, terminal_statuses, num_retries) for i in range(num_workers)]

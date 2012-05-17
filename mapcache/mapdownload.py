@@ -284,7 +284,7 @@ class TileDownloader(threading.Thread):
         self.error_count = 0
         self.last_error = None
 
-        self.dlmgr = DownloadManager([httplib.OK, httplib.NOT_FOUND, httplib.FORBIDDEN, httplib.FOUND], limit=100)
+        self.dlmgr = DownloadManager(limit=100)
 
         def process(key, status, data):
             return process_tile(sess, key, self.layer, status, data)
@@ -341,3 +341,24 @@ class DownloadProcessor(threading.Thread):
 
     def done(self):
         return self.count == (self.num_expected if self.num_expected is not None else -1)
+
+class DownloadService(object):
+
+    def __init__(self, process):
+        self.dlmgr = DownloadManager(limit=100)
+        self.dlpxr = DownloadProcessor(self.dlmgr, process)
+        self.started = False
+
+    def add(self, key, url):
+        if not self.started:
+            self.start()
+        self.dlmgr.enqueue((key, url))
+
+    def start(self):
+        self.started = True
+        self.dlmgr.start()
+        self.dlpxr.start()
+
+    def terminate(self):
+        self.dlmgr.terminate()
+        self.dlpxr.terminate()

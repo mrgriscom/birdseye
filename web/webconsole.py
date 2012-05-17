@@ -18,6 +18,7 @@ import time
 import email
 
 from mapcache import maptile as mt
+from mapcache import mapdownload as md
 import nav.texture
 
 from sqlalchemy import func
@@ -120,35 +121,26 @@ class TileURLHandler(web.RequestHandler):
         self.set_header('Content-Type', 'text/plain')
         self.write(mt.Tile(layer=layer, z=z, x=x, y=y).url())
 
-
-
-callbacks = {}
-def process(key, status, data):
-    cb = callbacks[key]
-    del callbacks[key]
+def on_tile_download(key, status, data):
+    t, cb = key
     IOLoop.instance().add_callback(lambda: cb((status, data)))
     return (True, None)
 
 class TileProxyHandler(web.RequestHandler):
+
+    def initialize(self, tiledl):
+        self.tiledl = tiledl
     
     @web.asynchronous
     @gen.engine
     def get(self, layer, z, x, y):
-
-        import threading
-        print threading.current_thread()
-
         z = int(z)
         x = int(x)
         y = int(y)
 
-        key = (layer, z, x, y)
-        url = mt.Tile(layer=layer, z=z, x=x, y=y).url()
-
+        t = mt.Tile(layer=layer, z=z, x=x, y=y)
         def async(callback):
-            callbacks[key] = callback
-            dlmgr.enqueue((key, url))
-
+            self.tiledl.add((t, callback), t.url())
         stat, data = yield gen.Task(async)
 
         if data:
@@ -156,7 +148,6 @@ class TileProxyHandler(web.RequestHandler):
             self.write(data)
         else:
             self.set_status(404)
-        print threading.current_thread()
         self.finish()
 
 class TileCoverHandler(web.RequestHandler):
@@ -184,20 +175,12 @@ class RootContentHandler(web.StaticFileHandler):
         super(RootContentHandler, self).get('map.html')
 
 
-
-
-import mapcache.mapdownload as md
-import mapcache.downloadmanager as dm
-import httplib
-dlmgr = dm.DownloadManager([httplib.OK, httplib.NOT_FOUND, httplib.FORBIDDEN, httplib.FOUND], limit=100)
-dlpxr = md.DownloadProcessor(dlmgr, process)
-
-
 sess = mt.dbsess()
+tiledl = md.DownloadService(on_tile_download)
 application = web.Application([
     (r'/layers', LayersHandler, {'dbsess': sess}),
     (r'/tile/([A-Za-z0-9_-]+)/([0-9]+)/([0-9]+),([0-9]+)', TileHandler, {'dbsess': sess}),
-    (r'/tileproxy/([A-Za-z0-9_-]+)/([0-9]+)/([0-9]+),([0-9]+)', TileProxyHandler),
+    (r'/tileproxy/([A-Za-z0-9_-]+)/([0-9]+)/([0-9]+),([0-9]+)', TileProxyHandler, {'tiledl': tiledl}),
     (r'/tileurl/([A-Za-z0-9_-]+)/([0-9]+)/([0-9]+),([0-9]+)', TileURLHandler),
     (r'/tilecover/([A-Za-z0-9_-]+)/([0-9]+)/([0-9]+),([0-9]+)', TileCoverHandler, {'dbsess': sess}),
     (r'/', RootContentHandler, {'path': os.path.join(project_root, 'web/static')}),
@@ -211,13 +194,9 @@ if __name__ == "__main__":
     except IndexError:
         port = 8000
 
-    dlmgr.start()
-    dlpxr.start()
-
     application.listen(port)
 
     try:
-        print 'whoa'
         IOLoop.instance().start()
         print 'hereeee'
     except KeyboardInterrupt:
@@ -228,5 +207,4 @@ if __name__ == "__main__":
 
     logging.info('shutting down...')
 
-    dlmgr.terminate()
-    dlpxr.terminate()
+    tiledl.terminate()
