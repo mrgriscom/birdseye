@@ -261,11 +261,12 @@ $(document).ready(function() {
 			    map.addLayer(layer);
 			}
 
-			var reflayer = new L.TileLayer();
-			reflayer.getTileUrl = function(tilePoint, zoom) {
-			    // warning: referer will be leaked to map server!
-			    return tile_url(e.url, zoom, tilePoint);
-			};
+			//var reflayer = new L.TileLayer();
+			//reflayer.getTileUrl = function(tilePoint, zoom) {
+			//    // warning: referer will be leaked to map server!
+			//    return tile_url(e.url, zoom, tilePoint);
+			//};
+			var reflayer = new L.TileLayer('/tileproxy/' + e.id + '/{z}/{x},{y}');
 			layers['+' + e.name] = reflayer;
 		    });
 		var layersControl = new L.Control.Layers(layers, {});

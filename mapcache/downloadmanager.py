@@ -156,7 +156,8 @@ class Connection(object):
             result = self.conn.getresponse()
             # could read mime type here, but it's better to define it globally for the layer
             return (result.status, result.read())
-        except (httplib.HTTPException, socket.error):
-            logging.exception('http connection error during request')
+        except (httplib.HTTPException, socket.error), e:
+            if not isinstance(e, httplib.BadStatusLine):
+                logging.exception('http connection error during request')
             self.error = True
             raise
