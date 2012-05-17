@@ -119,10 +119,6 @@ class TileURLHandler(TileRequestHandler):
         self.set_header('Content-Type', 'text/plain')
         self.write(tile.url())
 
-def on_tile_download(meta, status, data):
-    IOLoop.instance().add_callback(lambda: meta['callback']((status, data)))
-    return (True, None)
-
 class TileProxyHandler(TileRequestHandler):
 
     def initialize(self, tiledl):
@@ -131,8 +127,8 @@ class TileProxyHandler(TileRequestHandler):
     @web.asynchronous
     @gen.engine
     def _get(self, tile):
-        cache = False #(self.get_argument('cache') == 'true')
-        overwrite = False #(self.get_argument('overwrite') == 'true')
+        cache = (self.get_argument('cache', None) == 'true')
+        overwrite = (self.get_argument('overwrite', None) == 'true')
 
         def async(callback):
             self.tiledl.add({
@@ -141,13 +137,14 @@ class TileProxyHandler(TileRequestHandler):
                     'cache': cache,
                     'overwrite': overwrite,
                 }, tile.url())
-        stat, data = yield gen.Task(async)
+        data = yield gen.Task(async)
 
-        if data:
-            self.set_header('Content-Type', 'image/' + settings.LAYERS[tile.layer]['file_type'])
-            self.write(data)
-        else:
-            self.set_status(404)
+        self.return_static(
+            tile.layer,
+            data,
+            md.digest(data),
+            datetime.utcnow()
+        )
         self.finish()
 
 class TileCoverHandler(TileRequestHandler):
@@ -171,8 +168,12 @@ class RootContentHandler(web.StaticFileHandler):
         super(RootContentHandler, self).get('map.html')
 
 
+def tile_fetch_callback(meta, status, data):
+    IOLoop.instance().add_callback(lambda: meta['callback'](md.normdata(status, data)))
+
+
 sess = mt.dbsess()
-tiledl = md.DownloadService(on_tile_download)
+tiledl = md.DownloadService(tile_fetch_callback, sess)
 application = web.Application([
     (r'/layers', LayersHandler, {'dbsess': sess}),
     (r'/tile/([A-Za-z0-9_-]+)/([0-9]+)/([0-9]+),([0-9]+)', TileHandler, {'dbsess': sess}),

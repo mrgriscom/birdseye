@@ -181,32 +181,40 @@ def commit_tile(sess, t):
 
     sess.commit()
 
-def process_tile(sess, tile, layer, status, data):
+def digest(data):
+    if data is not None:
+        return hashlib.sha1(data).hexdigest()[:HASH_LENGTH*2]
+    else:
+        return null_digest()
+
+def normdata(status, data):
+    # treat '302 FOUND' as not found because we assume any redirect is to a generic 'missing' tile
+    # no competent tile server would use redirects for normal tiles
+    not_found = (status != httplib.OK)
+    return data if not not_found else None
+
+def _process_tile(sess, tile, layer, status, data):
     """process a tile download result, accounting for some common errors"""
-    def digest(data):
-        if data is not None:
-            return hashlib.sha1(data).hexdigest()[:HASH_LENGTH*2]
-        else:
-            return null_digest()
 
     if status in (httplib.OK, httplib.NOT_FOUND, httplib.FOUND):
         try:
-            # treat '302 FOUND' as not found because we assume any redirect is to a generic 'missing' tile
-            # no competent tile server would use redirects for normal tiles
-            not_found = (status != httplib.OK)
-
-            register_tile(sess, tile, layer, data if not not_found else None, digest)
-            return (True, None)
+            register_tile(sess, tile, layer, normdata(status, data), digest)
         except IOError:
-            return (False, '%s: could not write file' % str(tile))
+            raise Exception('%s: could not write file' % str(tile))
     else:
         if status == None:
-            msg = 'Tile %s: download error %s' % (str(tile), data)
+            raise Exception('Tile %s: download error %s' % (str(tile), data))
         elif status == httplib.FORBIDDEN:
-            msg = 'Warning: we may have been banned'
+            raise Exception('Warning: we may have been banned')
         else:
-            msg = 'Unrecognized response code %d (tile %s)' % (status, str(tile))
-        return (False, msg)
+            raise Exception('Unrecognized response code %d (tile %s)' % (status, str(tile)))
+
+def process_tile(sess, tile, layer, status, data):
+    try:
+        _process_tile(sess, tile, layer, status, data)
+        return (True, None)
+    except Exception, e:
+        return (False, str(e))
 
 def tile_counts(tiles):
     """determine how many tiles to be downloaded at each zoom level"""
@@ -344,15 +352,29 @@ class DownloadProcessor(threading.Thread):
 
 class DownloadService(object):
 
-    def __init__(self, process):
+    def __init__(self, process, sess=None):
+        self.sess = sess
+        def _process(meta, status, data):
+            self.cache_tile(meta['tile'], status, data, meta.get('cache', False), meta.get('overwrite', False))
+            process(meta, status, data)
+            return (True, None)
+
         self.dlmgr = DownloadManager(limit=100)
-        self.dlpxr = DownloadProcessor(self.dlmgr, process)
+        self.dlpxr = DownloadProcessor(self.dlmgr, _process)
         self.started = False
 
     def add(self, key, url):
         if not self.started:
             self.start()
         self.dlmgr.enqueue((key, url))
+
+    def cache_tile(self, t, status, data, cache, overwrite):
+        if cache:
+            if overwrite or not self.sess.query(mt.Tile).get(t.pk()):
+                try:
+                    _process_tile(self.sess, (t.z, t.x, t.y), t.layer, status, data)
+                except:
+                    pass
 
     def start(self):
         self.started = True
