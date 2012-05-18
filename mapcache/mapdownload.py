@@ -31,7 +31,12 @@ def tile_url((zoom, x, y), layer):
     if '_tileurl' not in L:
         urlgen = L['tile_url']
         if hasattr(urlgen, '__call__'):
-            urlgen = urlgen()
+            urlgen = init_tile_url(layer, urlgen)
+            if urlgen is None:
+                # init failure; don't set _tile_url so init will be attempted
+                # again on next call (not useful for bulk download but yes for
+                # on-the-fly tile service)
+                return 'http://-fail.blog' # trigger 'domain not known' error
 
         if hasattr(urlgen, '__call__'):
             def format_url(z, x, y):
@@ -42,6 +47,12 @@ def tile_url((zoom, x, y), layer):
         else:
             L['_tileurl'] = precompile_tile_url(urlgen, L.get('file_type'))
     return L['_tileurl'](zoom, x, y)
+
+def init_tile_url(layer, urlinit):
+    try:
+        return urlinit()
+    except:
+        logging.exception('error initializing url format for layer [%s]' % layer)
 
 def precompile_tile_url(template, file_type):
     """precompile the tile url format into a form that can be templated efficiently"""

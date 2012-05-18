@@ -51,7 +51,10 @@ class LayersHandler(web.RequestHandler):
 
             url_spec = L['tile_url']
             if hasattr(url_spec, '__call__'):
-                url_spec = url_spec()
+                url_spec = md.init_tile_url(key, url_spec)
+                if url_spec is None:
+                    # init fail
+                    url_spec = lambda: None # trigger {custom} behavior; init will be re-attempted on-demand
             if hasattr(url_spec, '__call__'):
                 url_spec = '{custom:%s}' % key
             url_spec = L.get('file_type', '').join(url_spec.split('{type}'))
