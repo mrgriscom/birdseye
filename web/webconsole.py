@@ -16,11 +16,15 @@ import json
 from datetime import datetime
 import time
 import email
+from optparse import OptionParser
 
 from mapcache import maptile as mt
 from mapcache import mapdownload as md
 
 from sqlalchemy import func
+
+def projpath(path):
+    return os.path.join(project_root, path)
 
 class LayersHandler(web.RequestHandler):
     """information about available layers"""
@@ -179,18 +183,25 @@ application = web.Application([
     (r'/tileproxy/([A-Za-z0-9_-]+)/([0-9]+)/([0-9]+),([0-9]+)', TileProxyHandler, {'tiledl': tiledl}),
     (r'/tileurl/([A-Za-z0-9_-]+)/([0-9]+)/([0-9]+),([0-9]+)', TileURLHandler),
     (r'/tilecover/([A-Za-z0-9_-]+)/([0-9]+)/([0-9]+),([0-9]+)', TileCoverHandler, {'dbsess': sess}),
-    (r'/', RootContentHandler, {'path': os.path.join(project_root, 'web/static')}),
-    (r'/(.*)', web.StaticFileHandler, {'path': os.path.join(project_root, 'web/static')}),
+    (r'/', RootContentHandler, {'path': projpath('web/static')}),
+    (r'/(.*)', web.StaticFileHandler, {'path': projpath('web/static')}),
 ])
 
 if __name__ == "__main__":
 
+    parser = OptionParser()
+    parser.add_option("--ssl", dest="ssl", action='store_true',
+                      help="enable ssl; prevents 'Referer' header from being sent to mapservers")
+
+    (options, args) = parser.parse_args()
+
     try:
-        port = int(sys.argv[1])
+        port = int(args[0])
     except IndexError:
         port = 8000
+    ssl = {'certfile': projpath('web/ssl.crt')} if options.ssl else None
 
-    application.listen(port)
+    application.listen(port, ssl_options=ssl)
 
     try:
         IOLoop.instance().start()
