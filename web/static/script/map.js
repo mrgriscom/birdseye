@@ -270,6 +270,7 @@ $(document).ready(function() {
 			    map.addLayer(layer);
 			}
 
+			/*
 			if (url_param('mode', 'proxy')) {
 			    var reflayer = new L.TileLayer('/tileproxy/' + e.id + '/{z}/{x},{y}');
 			} else {
@@ -280,35 +281,11 @@ $(document).ready(function() {
 			    };
 			}
 			layers['+' + e.name] = reflayer;
+			*/
 		    });
-		var layersControl = new L.Control.Layers(layers, {});
+		var layersControl = new LayerControl(layers);
 		map.addControl(layersControl);
-
-		var canvas_layer = new L.TileLayer.Canvas();
-		canvas_layer.drawTile = function(canvas, tile, zoom) {
-		    $.get('/tilecover/googmap/' + zoom + '/' + tile.x + ',' + tile.y, function(data) {
-			    var ctx = canvas.getContext('2d');
-			    ctx.fillStyle = 'rgba(255, 0, 0, 0.1)';
-
-			    $.each(data, function(i, t) {
-				    var w = 256 * Math.pow(0.5, t.z);
-				    ctx.fillRect(w * t.x, w * t.y, w, w);  
-				});
-			}, 'json');
-		}
-		//map.addLayer(canvas_layer);
-
-
-		/*	       
-var nexrad = new L.TileLayer.WMS("http://mesonet.agron.iastate.edu/cgi-bin/wms/nexrad/n0r.cgi", {
-    layers: 'nexrad-n0r-900913',
-    format: 'image/png',
-    transparent: true,
-    attribution: "Weather data © 2012 IEM Nexrad"
-});
-map.addLayer(nexrad);
-		*/
-
+		layersControl.setLabel('whoa');
 
 	    }, 'json');
 
@@ -327,37 +304,75 @@ function ActiveLoc(map) {
     }
 }
 
-function update_info(ll, map) {
-    var $info = $('#info');
-
-    var fmt_ll = function(k, dir) {
-	return dir[k >= 0 ? 0 : 1] + Math.abs(k).toFixed(5) + '\xb0';
-    };
+function pos_info(ll, map) {
     var tile_coord = function(k) {
 	return Math.floor(k / 256.);
     };
-    
-    $info.find('#lat').text(fmt_ll(ll.lat, 'NS'));
-    $info.find('#lon').text(fmt_ll(ll.lng, 'EW'));
-    $info.find('#zoom').text(map.getZoom());
-    var effzoom_offset = Math.floor(Math.log(Math.cos(Math.PI * ll.lat / 180.)) / Math.log(0.5));
-    $info.find('#effzoom').text(map.getZoom() + effzoom_offset);
-    $info.find('#zeff')[effzoom_offset == 0 ? 'hide' : 'show']();
-    
-    if (Math.abs(ll.lat) > L.Projection.SphericalMercator.MAX_LATITUDE) {
-	$info.find('#tx').html('&mdash;');
-	$info.find('#ty').html('&mdash;');
-	$info.find('#qt').html('&mdash;');
-    } else {
+
+    var info = {
+	lat: ll.lat,
+	lon: ll.lng,
+	zoom: map.getZoom(),
+	effzoom_offset: Math.floor(Math.log(Math.cos(Math.PI * ll.lat / 180.)) / Math.log(0.5))
+    };
+
+    if (Math.abs(ll.lat) <= L.Projection.SphericalMercator.MAX_LATITUDE) {
 	var px = map.project(ll);
-	var tx = tile_coord(px.x);
-	var ty = tile_coord(px.y);
-	var qt = tile_url('{qt}', map.getZoom(), new L.Point(tx, ty)) || '\u2205';
-	$info.find('#tx').text(tx);
-	$info.find('#ty').text(ty);
-	$info.find('#qt').text(qt);
+	info.tx = tile_coord(px.x);
+	info.ty = tile_coord(px.y);
+	info.qt = tile_url('{qt}', info.zoom, new L.Point(info.tx, info.ty));
     }
+
+    return info;
 }
+
+function update_info(ll, map) {
+    var $info = $('#info');
+    var info = pos_info(ll, map);
+
+    var npad = function(n, pad) {
+	var s = '' + n;
+	while (s.length < pad) {
+	    s = '0' + s;
+	}
+	return s;
+    }
+
+    var fmt_ll = function(k, dir, pad) {
+	var PREC = 5;
+	return dir[k >= 0 ? 0 : 1] + npad(Math.abs(k).toFixed(PREC), PREC + 1 + pad) + '\xb0';
+    };
+    
+    var max_t = Math.pow(2, info.zoom) - 1;
+    var fmt_t = function(t, z) {
+	return npad(t, ('' + max_t).length);
+    }
+
+    $info.find('#lat').text(fmt_ll(info.lat, 'NS', 2));
+    $info.find('#lon').text(fmt_ll(info.lon, 'EW', 3));
+    $info.find('#zoom').text(info.zoom);
+    $info.find('#effzoom').text(info.zoom + info.effzoom_offset);
+    $info.find('#zeff')[info.effzoom_offset == 0 ? 'hide' : 'show']();    
+    $info.find('#tx').text(info.tx != null ? fmt_t(info.tx) : '\u2013');
+    $info.find('#ty').text(info.ty != null ? fmt_t(info.ty) : '\u2013');
+    $info.find('#qt').text(info.qt == null ? '\u2013' : (info.qt || '\u2205'));
+}
+
+/*
+		var canvas_layer = new L.TileLayer.Canvas();
+		canvas_layer.drawTile = function(canvas, tile, zoom) {
+		    $.get('/tilecover/googmap/' + zoom + '/' + tile.x + ',' + tile.y, function(data) {
+			    var ctx = canvas.getContext('2d');
+			    ctx.fillStyle = 'rgba(255, 0, 0, 0.1)';
+
+			    $.each(data, function(i, t) {
+				    var w = 256 * Math.pow(0.5, t.z);
+				    ctx.fillRect(w * t.x, w * t.y, w, w);  
+				});
+			}, 'json');
+		}
+		//map.addLayer(canvas_layer);
+*/
 
 function make_canvas(w, h) {
     var $canvas = $('<canvas />');
@@ -431,3 +446,199 @@ function url_param(param, value) {
     var _ = function(s) { return '&' + s + '&'; };
     return _(params).indexOf(_(param + '=' + value)) != -1;
 }
+
+
+
+LayerControl = L.Control.Layers.extend({});
+LayerControl.prototype = new L.Control.Layers();
+
+var _initLayout = L.Control.Layers.prototype._initLayout;
+LayerControl.prototype._initLayout = function() {
+    _initLayout.call(this);
+
+    var $a = $(this._container).find('a');
+    $a.attr('id', 'layericon');
+
+    this.$label = $('<div />');
+    this.$label.addClass('layerlabel');
+    this.$label.addClass('empty');
+    $a.append(this.$label);
+};
+
+LayerControl.prototype.setLabel = function(label) {
+    this.$label.text(label);
+    if (label != null && label.length > 0) {
+	this.$label.removeClass('empty');
+    } else {
+	this.$label.addClass('empty');
+    }
+}
+
+/*
+L.Control.Layers = L.Control.extend({
+    options: {
+        collapsed: true,
+        position: 'topright'
+    },
+
+    initialize: function (baseLayers, overlays, options) {
+        console.log('here');
+        L.Util.setOptions(this, options);
+
+        this._layers = {};
+
+        for (var i in baseLayers) {
+            if (baseLayers.hasOwnProperty(i)) {
+                this._addLayer(baseLayers[i], i);
+            }
+        }
+
+        for (i in overlays) {
+            if (overlays.hasOwnProperty(i)) {
+                this._addLayer(overlays[i], i, true);
+            }
+        }
+    },
+
+    onAdd: function (map) {
+        this._initLayout();
+        this._update();
+
+        return this._container;
+    },
+
+    addBaseLayer: function (layer, name) {
+        this._addLayer(layer, name);
+        this._update();
+        return this;
+    },
+
+    addOverlay: function (layer, name) {
+        this._addLayer(layer, name, true);
+        this._update();
+        return this;
+    },
+
+    removeLayer: function (layer) {
+        var id = L.Util.stamp(layer);
+        delete this._layers[id];
+        this._update();
+        return this;
+    },
+
+    _initLayout: function () {
+        var className = 'leaflet-control-layers',
+            container = this._container = L.DomUtil.create('div', className);
+
+        if (!L.Browser.touch) {
+            L.DomEvent.disableClickPropagation(container);
+        } else {
+            L.DomEvent.addListener(container, 'click', L.DomEvent.stopPropagation);
+        }
+
+        var form = this._form = L.DomUtil.create('form', className + '-list');
+
+        if (this.options.collapsed) {
+            L.DomEvent
+                .addListener(container, 'mouseover', this._expand, this)
+                .addListener(container, 'mouseout', this._collapse, this);
+
+            var link = this._layersLink = L.DomUtil.create('a', className + '-toggle', container);
+            link.href = '#';
+            link.title = 'Layers';
+
+            L.DomEvent.addListener(link, L.Browser.touch ? 'click' : 'focus', this._expand, this);
+
+            this._map.on('movestart', this._collapse, this);
+            // TODO keyboard accessibility
+        } else {
+            this._expand();
+        }
+
+        this._baseLayersList = L.DomUtil.create('div', className + '-base', form);
+        this._separator = L.DomUtil.create('div', className + '-separator', form);
+        this._overlaysList = L.DomUtil.create('div', className + '-overlays', form);
+
+        container.appendChild(form);
+    },
+
+    _addLayer: function (layer, name, overlay) {
+        var id = L.Util.stamp(layer);
+        this._layers[id] = {
+            layer: layer,
+            name: name,
+            overlay: overlay
+        };
+    },
+
+    _update: function () {
+        if (!this._container) {
+            return;
+        }
+
+        this._baseLayersList.innerHTML = '';
+        this._overlaysList.innerHTML = '';
+
+        var baseLayersPresent = false,
+            overlaysPresent = false;
+
+        for (var i in this._layers) {
+            if (this._layers.hasOwnProperty(i)) {
+                var obj = this._layers[i];
+                this._addItem(obj);
+                overlaysPresent = overlaysPresent || obj.overlay;
+                baseLayersPresent = baseLayersPresent || !obj.overlay;
+            }
+        }
+
+        this._separator.style.display = (overlaysPresent && baseLayersPresent ? '' : 'none');
+    },
+
+    _addItem: function (obj, onclick) {
+        var label = document.createElement('label');
+
+        var input = document.createElement('input');
+        if (!obj.overlay) {
+            input.name = 'leaflet-base-layers';
+        }
+        input.type = obj.overlay ? 'checkbox' : 'radio';
+        input.layerId = L.Util.stamp(obj.layer);
+        input.defaultChecked = this._map.hasLayer(obj.layer);
+
+        L.DomEvent.addListener(input, 'click', this._onInputClick, this);
+
+        var name = document.createTextNode(' ' + obj.name);
+
+        label.appendChild(input);
+        label.appendChild(name);
+
+        var container = obj.overlay ? this._overlaysList : this._baseLayersList;
+        container.appendChild(label);
+    },
+
+    _onInputClick: function () {
+        var i, input, obj,
+            inputs = this._form.getElementsByTagName('input'),
+            inputsLen = inputs.length;
+
+        for (i = 0; i < inputsLen; i++) {
+            input = inputs[i];
+            obj = this._layers[input.layerId];
+
+            if (input.checked) {
+                this._map.addLayer(obj.layer, !obj.overlay);
+            } else {
+                this._map.removeLayer(obj.layer);
+            }
+        }
+    },
+
+    _expand: function () {
+        L.DomUtil.addClass(this._container, 'leaflet-control-layers-expanded');
+    },
+
+    _collapse: function () {
+        this._container.className = this._container.className.replace(' leaflet-control-layers-expanded', '');
+    }
+});
+*/
