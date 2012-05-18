@@ -216,6 +216,15 @@ function tile_url(spec, zoom, point) {
 }
 
 $(document).ready(function() {
+
+	// monkey patch to add 'alpha-channel checker' bg to all tiles
+	var tile_bg = render_icon(alpha_checker, 256, 256);
+	var _onload = L.TileLayer.prototype._tileOnLoad;
+	L.TileLayer.prototype._tileOnLoad = function(e) {
+	    $(this).css('background', 'url(' + tile_bg + ')');
+	    _onload.call(this, e);
+	};
+
 	var DEFAULT_ZOOM = 2;
 
 	var map = new L.Map('map', {worldCopyJump: false});
@@ -386,6 +395,18 @@ function render_marker(draw, w, h, anchor) {
 	    iconAnchor: new L.Point(w * .5 * (anchor[0] + 1.), h * .5 * (1. - anchor[1])),
 	});
     return new icon();
+}
+
+function alpha_checker(ctx, w, h) {
+    var dim = 8;
+    var colors = ['#787878', '#888888'];
+
+    for (var i = 0, x = 0; x < w; x += dim, i++) {
+	for (var j = 0, y = 0; y < h; y += dim, j++) {
+	    ctx.fillStyle = colors[(i + j) % colors.length];
+	    ctx.fillRect(x, y, dim, dim);
+	}
+    }
 }
 
 function mod(a, b) {
