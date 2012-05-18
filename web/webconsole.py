@@ -19,7 +19,6 @@ import email
 
 from mapcache import maptile as mt
 from mapcache import mapdownload as md
-import nav.texture
 
 from sqlalchemy import func
 

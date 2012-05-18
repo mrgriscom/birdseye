@@ -261,12 +261,15 @@ $(document).ready(function() {
 			    map.addLayer(layer);
 			}
 
-			//var reflayer = new L.TileLayer();
-			//reflayer.getTileUrl = function(tilePoint, zoom) {
-			//    // warning: referer will be leaked to map server!
-			//    return tile_url(e.url, zoom, tilePoint);
-			//};
-			var reflayer = new L.TileLayer('/tileproxy/' + e.id + '/{z}/{x},{y}');
+			if (url_param('mode', 'proxy')) {
+			    var reflayer = new L.TileLayer('/tileproxy/' + e.id + '/{z}/{x},{y}');
+			} else {
+			    var reflayer = new L.TileLayer();
+			    reflayer.getTileUrl = function(tilePoint, zoom) {
+				// warning: referer will be leaked to map server!
+				return tile_url(e.url, zoom, tilePoint);
+			    };
+			}
 			layers['+' + e.name] = reflayer;
 		    });
 		var layersControl = new L.Control.Layers(layers, {});
@@ -286,6 +289,7 @@ $(document).ready(function() {
 		}
 		//map.addLayer(canvas_layer);
 
+
 		/*	       
 var nexrad = new L.TileLayer.WMS("http://mesonet.agron.iastate.edu/cgi-bin/wms/nexrad/n0r.cgi", {
     layers: 'nexrad-n0r-900913',
@@ -300,7 +304,6 @@ map.addLayer(nexrad);
 	    }, 'json');
 
     });
-
 
 function ActiveLoc(map) {
     this.p = null;
@@ -398,4 +401,12 @@ function anglenorm(a, offset) {
 	offset = 180.;
     }
     return mod(a + offset, 360.) - offset;
+}
+
+function url_param(param, value) {
+    var url = window.location.href;
+    var params = url.substring(url.indexOf('?') + 1);
+
+    var _ = function(s) { return '&' + s + '&'; };
+    return _(params).indexOf(_(param + '=' + value)) != -1;
 }
