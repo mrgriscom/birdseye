@@ -28,7 +28,6 @@ body {
   text-align: right;
   font-size: 85%;
   z-index: 500;
-  min-width: 7.5em;
 }
 
 #info .data {
@@ -69,7 +68,8 @@ body {
 <div id="map" style="height: 100%;"></div>
 
 <div id="info">
-  <div class="data" style="min-width: 6em;">
+  <div class="data">
+    <div style="visibility: hidden; height: 0px;">W000.00000&#xb0;</div>
     <div id="lat"></div>
     <div id="lon"></div>
   </div>
