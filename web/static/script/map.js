@@ -169,7 +169,7 @@ function RegionPoly(map, points) {
 function tile_url(spec, zoom, point) {
     var replace = function(key, sub) {
 	spec = spec.replace(new RegExp('{' + key + '(:[^}]+)?}', 'g'), function(match, submatch) {
-		return sub(submatch == null ? null : submatch.substring(1));
+		return sub(submatch == null || submatch.length == 0 ? null : submatch.substring(1));
 	    });
     }
 
