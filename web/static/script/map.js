@@ -221,7 +221,9 @@ $(document).ready(function() {
 	var tile_bg = render_icon(alpha_checker, 256, 256);
 	var _onload = L.TileLayer.prototype._tileOnLoad;
 	L.TileLayer.prototype._tileOnLoad = function(e) {
-	    $(this).css('background', 'url(' + tile_bg + ')');
+	    if (this.src.substring(0, 5) != 'data:') {
+		$(this).css('background', 'url(' + tile_bg + ')');
+	    }
 	    _onload.call(this, e);
 	};
 
@@ -262,30 +264,15 @@ $(document).ready(function() {
 	    });
 
 	$.get('/layers', {default_zoom: DEFAULT_ZOOM}, function(data) {
-		var layers = {};
+		var layersControl = new LayerControl();
 		$.each(data, function(i, e) {
-			var layer = new L.TileLayer('/tile/' + e.id + '/{z}/{x},{y}');
-			layers[e.name] = layer;
+			var layer = cache_layer(e, true);
+			layersControl.addBaseLayer(layer, e.name);
 			if (e.default) {
 			    map.addLayer(layer);
 			}
-
-			/*
-			if (url_param('mode', 'proxy')) {
-			    var reflayer = new L.TileLayer('/tileproxy/' + e.id + '/{z}/{x},{y}');
-			} else {
-			    var reflayer = new L.TileLayer();
-			    reflayer.getTileUrl = function(tilePoint, zoom) {
-				// warning: referer will be leaked to map server!
-				return tile_url(e.url, zoom, tilePoint);
-			    };
-			}
-			layers['+' + e.name] = reflayer;
-			*/
 		    });
-		var layersControl = new LayerControl(layers);
 		map.addControl(layersControl);
-		layersControl.setLabel('whoa');
 
 	    }, 'json');
 
@@ -358,21 +345,42 @@ function update_info(ll, map) {
     $info.find('#qt').text(info.qt == null ? '\u2013' : (info.qt || '\u2205'));
 }
 
-/*
-		var canvas_layer = new L.TileLayer.Canvas();
-		canvas_layer.drawTile = function(canvas, tile, zoom) {
-		    $.get('/tilecover/googmap/' + zoom + '/' + tile.x + ',' + tile.y, function(data) {
-			    var ctx = canvas.getContext('2d');
-			    ctx.fillStyle = 'rgba(255, 0, 0, 0.1)';
+var no_cache = render_icon(non_cached, 256, 256);
+function cache_layer(lyrspec, notfound) {
+    return new L.TileLayer('/tile/' + lyrspec.id + '/{z}/{x},{y}', {
+	    errorTileUrl: notfound ? no_cache : null
+	});
+}
 
-			    $.each(data, function(i, t) {
-				    var w = 256 * Math.pow(0.5, t.z);
-				    ctx.fillRect(w * t.x, w * t.y, w, w);  
-				});
-			}, 'json');
-		}
-		//map.addLayer(canvas_layer);
-*/
+//url_param('mode', 'proxy')
+function source_layer(lyrspec, proxy, notfound) {
+    if (proxy) {
+	return new L.TileLayer('/tileproxy/' + lyrspec.id + '/{z}/{x},{y}');
+    } else {
+	var reflayer = new L.TileLayer();
+	reflayer.getTileUrl = function(tilePoint, zoom) {
+	    // warning: referer may be leaked to map server!
+	    return tile_url(lyrspec.url, zoom, tilePoint);
+	};
+	return reflayer;
+    }
+}
+
+function coverage_layer(lyrspec) {
+    var canvas_layer = new L.TileLayer.Canvas();
+    canvas_layer.drawTile = function(canvas, tile, zoom) {
+	$.get('/tilecover/' + lyrspec.id + '/' + zoom + '/' + tile.x + ',' + tile.y, function(data) {
+		var ctx = canvas.getContext('2d');
+		ctx.fillStyle = 'rgba(255, 0, 0, 0.1)';
+		
+		$.each(data, function(i, t) {
+			var w = 256 * Math.pow(0.5, t.z);
+			ctx.fillRect(w * t.x, w * t.y, w, w);  
+		    });
+	    }, 'json');
+    }
+    return canvas_layer;
+}
 
 function make_canvas(w, h) {
     var $canvas = $('<canvas />');
@@ -424,6 +432,12 @@ function alpha_checker(ctx, w, h) {
     }
 }
 
+function non_cached(ctx, w, h) {
+    ctx.globalAlpha = .5;
+    ctx.fillStyle = 'green';
+    ctx.fillRect(.2*w,.2*h,.6*w,.6*h);
+}
+
 function mod(a, b) {
     if (a < 0) {
 	return ((a % b) + b) % b;
@@ -448,197 +462,40 @@ function url_param(param, value) {
 }
 
 
+LayerControl = L.Control.Layers.extend({
+	setLabel: function(label) {
+	    this.$label.text(label);
+	    if (label != null && label.length > 0) {
+		this.$label.removeClass('empty');
+	    } else {
+		this.$label.addClass('empty');
+	    }
+	},
 
-LayerControl = L.Control.Layers.extend({});
-LayerControl.prototype = new L.Control.Layers();
+	_initLayout: function() {
+	    L.Control.Layers.prototype._initLayout.call(this);
+	    
+	    var $a = $(this._container).find('a');
+	    $a.attr('id', 'layericon');
+	    
+	    this.$label = $('<div />');
+	    this.$label.addClass('layerlabel');
+	    this.$label.addClass('empty');
+	    $a.append(this.$label);
+	},
 
-var _initLayout = L.Control.Layers.prototype._initLayout;
-LayerControl.prototype._initLayout = function() {
-    _initLayout.call(this);
+	initialize: function(layers) {
+	    var overlays = {
+		source: new L.TileLayer(),
+		cached: new L.TileLayer(),
+		coverage: new L.TileLayer(),
+	    };
+	    L.Control.Layers.prototype.initialize.call(this, layers, overlays);
+	},
 
-    var $a = $(this._container).find('a');
-    $a.attr('id', 'layericon');
+	_addItem: function(a, b) {
+	    console.log(a);
+	    L.Control.Layers.prototype._addItem.call(this, a, b);
+	}
+    });
 
-    this.$label = $('<div />');
-    this.$label.addClass('layerlabel');
-    this.$label.addClass('empty');
-    $a.append(this.$label);
-};
-
-LayerControl.prototype.setLabel = function(label) {
-    this.$label.text(label);
-    if (label != null && label.length > 0) {
-	this.$label.removeClass('empty');
-    } else {
-	this.$label.addClass('empty');
-    }
-}
-
-/*
-L.Control.Layers = L.Control.extend({
-    options: {
-        collapsed: true,
-        position: 'topright'
-    },
-
-    initialize: function (baseLayers, overlays, options) {
-        console.log('here');
-        L.Util.setOptions(this, options);
-
-        this._layers = {};
-
-        for (var i in baseLayers) {
-            if (baseLayers.hasOwnProperty(i)) {
-                this._addLayer(baseLayers[i], i);
-            }
-        }
-
-        for (i in overlays) {
-            if (overlays.hasOwnProperty(i)) {
-                this._addLayer(overlays[i], i, true);
-            }
-        }
-    },
-
-    onAdd: function (map) {
-        this._initLayout();
-        this._update();
-
-        return this._container;
-    },
-
-    addBaseLayer: function (layer, name) {
-        this._addLayer(layer, name);
-        this._update();
-        return this;
-    },
-
-    addOverlay: function (layer, name) {
-        this._addLayer(layer, name, true);
-        this._update();
-        return this;
-    },
-
-    removeLayer: function (layer) {
-        var id = L.Util.stamp(layer);
-        delete this._layers[id];
-        this._update();
-        return this;
-    },
-
-    _initLayout: function () {
-        var className = 'leaflet-control-layers',
-            container = this._container = L.DomUtil.create('div', className);
-
-        if (!L.Browser.touch) {
-            L.DomEvent.disableClickPropagation(container);
-        } else {
-            L.DomEvent.addListener(container, 'click', L.DomEvent.stopPropagation);
-        }
-
-        var form = this._form = L.DomUtil.create('form', className + '-list');
-
-        if (this.options.collapsed) {
-            L.DomEvent
-                .addListener(container, 'mouseover', this._expand, this)
-                .addListener(container, 'mouseout', this._collapse, this);
-
-            var link = this._layersLink = L.DomUtil.create('a', className + '-toggle', container);
-            link.href = '#';
-            link.title = 'Layers';
-
-            L.DomEvent.addListener(link, L.Browser.touch ? 'click' : 'focus', this._expand, this);
-
-            this._map.on('movestart', this._collapse, this);
-            // TODO keyboard accessibility
-        } else {
-            this._expand();
-        }
-
-        this._baseLayersList = L.DomUtil.create('div', className + '-base', form);
-        this._separator = L.DomUtil.create('div', className + '-separator', form);
-        this._overlaysList = L.DomUtil.create('div', className + '-overlays', form);
-
-        container.appendChild(form);
-    },
-
-    _addLayer: function (layer, name, overlay) {
-        var id = L.Util.stamp(layer);
-        this._layers[id] = {
-            layer: layer,
-            name: name,
-            overlay: overlay
-        };
-    },
-
-    _update: function () {
-        if (!this._container) {
-            return;
-        }
-
-        this._baseLayersList.innerHTML = '';
-        this._overlaysList.innerHTML = '';
-
-        var baseLayersPresent = false,
-            overlaysPresent = false;
-
-        for (var i in this._layers) {
-            if (this._layers.hasOwnProperty(i)) {
-                var obj = this._layers[i];
-                this._addItem(obj);
-                overlaysPresent = overlaysPresent || obj.overlay;
-                baseLayersPresent = baseLayersPresent || !obj.overlay;
-            }
-        }
-
-        this._separator.style.display = (overlaysPresent && baseLayersPresent ? '' : 'none');
-    },
-
-    _addItem: function (obj, onclick) {
-        var label = document.createElement('label');
-
-        var input = document.createElement('input');
-        if (!obj.overlay) {
-            input.name = 'leaflet-base-layers';
-        }
-        input.type = obj.overlay ? 'checkbox' : 'radio';
-        input.layerId = L.Util.stamp(obj.layer);
-        input.defaultChecked = this._map.hasLayer(obj.layer);
-
-        L.DomEvent.addListener(input, 'click', this._onInputClick, this);
-
-        var name = document.createTextNode(' ' + obj.name);
-
-        label.appendChild(input);
-        label.appendChild(name);
-
-        var container = obj.overlay ? this._overlaysList : this._baseLayersList;
-        container.appendChild(label);
-    },
-
-    _onInputClick: function () {
-        var i, input, obj,
-            inputs = this._form.getElementsByTagName('input'),
-            inputsLen = inputs.length;
-
-        for (i = 0; i < inputsLen; i++) {
-            input = inputs[i];
-            obj = this._layers[input.layerId];
-
-            if (input.checked) {
-                this._map.addLayer(obj.layer, !obj.overlay);
-            } else {
-                this._map.removeLayer(obj.layer);
-            }
-        }
-    },
-
-    _expand: function () {
-        L.DomUtil.addClass(this._container, 'leaflet-control-layers-expanded');
-    },
-
-    _collapse: function () {
-        this._container.className = this._container.className.replace(' leaflet-control-layers-expanded', '');
-    }
-});
-*/
