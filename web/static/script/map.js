@@ -216,16 +216,7 @@ function tile_url(spec, zoom, point) {
 }
 
 $(document).ready(function() {
-
-	// monkey patch to add 'alpha-channel checker' bg to all tiles
-	var tile_bg = render_icon(alpha_checker, 256, 256);
-	var _onload = L.TileLayer.prototype._tileOnLoad;
-	L.TileLayer.prototype._tileOnLoad = function(e) {
-	    if (this.src && this.src.substring(0, 5) != 'data:') {
-		$(this).css('background', 'url(' + tile_bg + ')');
-	    }
-	    _onload.call(this, e);
-	};
+	monkey_patch();
 
 	var DEFAULT_ZOOM = 2;
 
@@ -276,6 +267,27 @@ $(document).ready(function() {
 	    }, 'json');
 
     });
+
+function monkey_patch() {
+    // monkey patch to add 'alpha-channel checker' bg to all tiles
+    var tile_bg = render_icon(alpha_checker, 256, 256);
+    var _onload = L.TileLayer.prototype._tileOnLoad;
+    L.TileLayer.prototype._tileOnLoad = function(e) {
+	if (this.src && this.src.substring(0, 5) != 'data:') {
+	    $(this).css('background', 'url(' + tile_bg + ')');
+	}
+	_onload.call(this, e);
+    };
+
+    // 'lyrs' needs to contain all layers currently on map
+    L.Map.prototype.order_layers = function(lyrs) {
+	$(this._tilePane).empty();
+	var m = this;
+	$.each(lyrs, function(i, lyr) {
+		$(m._tilePane).append(lyr._container);
+	    });
+    }
+}
 
 function ActiveLoc(map) {
     this.p = null;
@@ -484,13 +496,13 @@ LayerControl = L.Control.Layers.extend({
 	},
 
 	initialize: function(layers) {
+	    this.overlay_types = ['source', 'cached', 'coverage'];
 	    this.active_layers = {}
 	    this.active_layer = null;
 
-	    var overlay_types = ['source', 'cached', 'coverage'];
 	    var ov = {};
 	    var lc = this;
-	    $.each(overlay_types, function(i, e) {
+	    $.each(this.overlay_types, function(i, e) {
 		    ov[e] = {id: e, overlay: true};
 		    lc.active_layers[e] = null;
 		});
@@ -536,6 +548,15 @@ LayerControl = L.Control.Layers.extend({
 		    }
 		});
 	    this.active_layer = active_layer;
+
+	    var ordered_layers = [];
+	    $.each(this.overlay_types, function(i, e) {
+		    var lyr = lc.active_layers[e];
+		    if (lyr) {
+			ordered_layers.push(lyr);
+		    }
+		});
+	    this._map.order_layers(ordered_layers);
 
 	    if (this.active_layer) {
 		var lab = this.active_layer.id;
