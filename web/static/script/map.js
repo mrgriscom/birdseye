@@ -219,10 +219,11 @@ $(document).ready(function() {
 	monkey_patch();
 
 	var DEFAULT_ZOOM = 2;
+	var MAX_ZOOM = 20;
 
 	L.Icon.Default.imagePath = '/img/leaflet';
 	var map = new L.Map('map', {
-		maxZoom: 20,
+		maxZoom: MAX_ZOOM,
 		worldCopyJump: false,
 	    });
 	map.setView(new L.LatLng(30., 0.), DEFAULT_ZOOM);

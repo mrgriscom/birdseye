@@ -1,7 +1,6 @@
 L.Control.Zoomslider = L.Control.extend({
 	options: {
 		position: 'topleft',
-		sliderHeight: 162
 	},
 
 	onAdd: function (map) {
@@ -24,8 +23,17 @@ L.Control.Zoomslider = L.Control.extend({
 		var slider = L.DomUtil.create('div', className, wrapper);
 		var knob = L.DomUtil.create('div', className + '-knob', slider);
 
+		if (map.getMaxZoom() > 100) {
+		    throw 'map must set a max zoom to use zoom slider';
+		}
+
+	        this.sliderHeightStep = 9;
 		this._zoomLevels = map.getMaxZoom() - map.getMinZoom();
-		this._zoomStep = this.options.sliderHeight / this._zoomLevels;
+		this._zoomStep = this.sliderHeightStep;
+		this.options.sliderHeight = this._zoomStep * this._zoomLevels;
+
+		$(wrapper).css('height', (this.options.sliderHeight + 4) + 'px');
+
 		this._makeDraggable(knob);
 		this._snapToMapZoomLevel();
 		this._knob = knob;
