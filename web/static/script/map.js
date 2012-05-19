@@ -215,11 +215,11 @@ function tile_url(spec, zoom, point) {
     return spec;
 }
 
+var DEFAULT_ZOOM = 2;
+var MAX_ZOOM = 20;
+
 $(document).ready(function() {
 	monkey_patch();
-
-	var DEFAULT_ZOOM = 2;
-	var MAX_ZOOM = 20;
 
 	L.Icon.Default.imagePath = '/img/leaflet';
 	var map = new L.Map('map', {
@@ -574,6 +574,7 @@ LayerControl = L.Control.Layers.extend({
 				cached: function(l) { return cache_layer(l, true); },
 				coverage: function(l) { return coverage_layer(l); },
 			    }[type])(active_layer);
+			maplayer.options.maxZoom = MAX_ZOOM;
 			lc._map.addLayer(maplayer);
 			lc.active_layers[type] = maplayer;
 			console.log('adding layer: ' + type + ' ' + active_layer.id);

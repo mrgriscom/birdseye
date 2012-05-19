@@ -150,7 +150,6 @@ def split_by_axis(coords):
     return zip(('x', 'y', 'z'), by_axis)
 
 def interpolate(axis, data, params={}):
-    # could do fancy spline stuff here, for now, just use first point
     p = data[0]['p']
     if p is None:
         return None
@@ -172,6 +171,10 @@ def interpolate(axis, data, params={}):
 
     factors = list(solve(*(np.array(m[:4]) for m in zip(*equations()))))
     return lambda dt: project(dt, factors)
+
+# fix me
+def polynomial_factors(degree, derivative=0):
+    return [u.fact_div(i + derivative, i) for i in range(0, degree + 1)]
 
 def project(t, factors):
     """evaluate a polynomial and its derivatives"""
