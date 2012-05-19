@@ -86,10 +86,16 @@ L.Control.Zoomslider = L.Control.extend({
 
 	_onSliderClick: function(e){
 		var first = (e.touches && e.touches.length === 1 ? e.touches[0] : e);
-		var newPoint = new L.Point(
-			0, 
-			first.offsetY -  this._knob.offsetHeight / 2
-		);
+		
+		if ($.browser.mozilla) {
+		    if (first.originalTarget != $('.leaflet-control-zoomslider-slider')[0]) {
+			return;
+		    }
+		    var py = first.layerY - first.originalTarget.offsetTop;
+		} else {
+		    var py = first.offsetY;
+		}
+		var newPoint = new L.Point(0, py - this._knob.offsetHeight / 2);
 		L.DomUtil.setPosition(this._knob,newPoint);
 		this._snap();
 		this._setZoom();
