@@ -268,13 +268,15 @@ $(document).ready(function() {
 
     });
 
+var IMG_ALPHABG = '/img/alphabg.png';
+var IMG_NOCACHE = '/img/nocache.png';
+
 function monkey_patch() {
     // monkey patch to add 'alpha-channel checker' bg to all tiles
-    var tile_bg = render_icon(alpha_checker, 256, 256);
     var _onload = L.TileLayer.prototype._tileOnLoad;
     L.TileLayer.prototype._tileOnLoad = function(e) {
-	if (this.src && this.src.substring(0, 5) != 'data:') {
-	    $(this).css('background', 'url(' + tile_bg + ')');
+	if (this.src && this.src.indexOf(IMG_NOCACHE) == -1) {
+	    $(this).css('background', 'url(' + IMG_ALPHABG + ')');
 	}
 	_onload.call(this, e);
     };
@@ -356,10 +358,9 @@ function update_info(ll, map) {
     $info.find('#qt').text(info.qt == null ? '\u2013' : (info.qt || '\u2205'));
 }
 
-var no_cache = render_icon(non_cached, 256, 256);
 function cache_layer(lyrspec, notfound) {
     return new L.TileLayer('/tile/' + lyrspec.id + '/{z}/{x},{y}', {
-	    errorTileUrl: notfound ? no_cache : null
+	    errorTileUrl: notfound ? IMG_NOCACHE : null
 	});
 }
 
@@ -431,6 +432,7 @@ function render_marker(draw, w, h, anchor) {
     return new icon();
 }
 
+/*
 function alpha_checker(ctx, w, h) {
     var dim = 8;
     var colors = ['#787878', '#888888'];
@@ -442,12 +444,28 @@ function alpha_checker(ctx, w, h) {
 	}
     }
 }
+*/
 
+/*
 function non_cached(ctx, w, h) {
+    var bands = 10;
+    var ratio = 1;
     ctx.globalAlpha = .2;
-    ctx.fillStyle = 'green';
-    ctx.fillRect(.2*w,.2*h,.6*w,.6*h);
+
+    ctx.scale(w, h);
+    ctx.rotate(Math.PI / 4);
+    ctx.scale(Math.sqrt(2.), Math.sqrt(.5));
+
+    ctx.fillStyle = 'black';
+    ctx.fillRect(0, -1, 1, 2);
+
+    ctx.fillStyle = 'white';
+    var k = ratio / (ratio + 1);
+    for (var i = 0; i <= bands; i++) {
+	ctx.fillRect((i - .5 * k) / bands, -1, k / bands, 2);
+    }
 }
+*/
 
 function mod(a, b) {
     if (a < 0) {
