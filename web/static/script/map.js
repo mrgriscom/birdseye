@@ -601,7 +601,7 @@ LayerControl = L.Control.Layers.extend({
 	    $.each(inputs, function(i, input) {
 		    var o = lc._layers[input.layerId];
 		    if (o.layer == e || o.layer.id == e) {
-			input.defaultChecked = true;
+			input.checked = true;
 		    }
 		});
 	    this._onInputClick();
