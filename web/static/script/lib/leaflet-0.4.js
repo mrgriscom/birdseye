@@ -5702,24 +5702,23 @@ L.Control.Scale = L.Control.extend({
 	},
 
 	_update: function () {
-		var bounds = this._map.getBounds(),
-		    centerLat = bounds.getCenter().lat,
+	    var size = this._map.getSize();
+	    var bounds = this._map.getBounds();
+	    var centerLat = this._map.getCenter().lat;
 
-		    left = new L.LatLng(centerLat, bounds.getSouthWest().lng),
-		    right = new L.LatLng(centerLat, bounds.getNorthEast().lng),
-
-		    size = this._map.getSize(),
-		    options = this.options,
-
-		    maxMeters = left.distanceTo(right) * (options.maxWidth / size.x);
-
-		if (options.metric) {
-			this._updateMetric(maxMeters);
-		}
-
-		if (options.imperial) {
-			this._updateImperial(maxMeters);
-		}
+	    var metersPerDegreeLon = new L.LatLng(0., 0.).distanceTo(new L.LatLng(0., 1.));
+	    var xSpanLon = bounds.getNorthEast().lng - bounds.getSouthWest().lng;
+	    var xSpanMeters = metersPerDegreeLon * xSpanLon * Math.cos(centerLat * Math.PI / 180.);
+	    	    
+	    var maxMeters = xSpanMeters * (this.options.maxWidth / size.x);
+	    
+	    if (this.options.metric) {
+		this._updateMetric(maxMeters);
+	    }
+	    
+	    if (this.options.imperial) {
+		this._updateImperial(maxMeters);
+	    }
 	},
 
 	_updateMetric: function (maxMeters) {

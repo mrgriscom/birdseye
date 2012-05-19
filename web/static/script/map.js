@@ -225,6 +225,10 @@ $(document).ready(function() {
 		worldCopyJump: false,
 	    });
 	map.setView(new L.LatLng(30., 0.), DEFAULT_ZOOM);
+	map.addControl(new L.Control.Scale({
+		    maxWidth: 125,
+		    position: 'bottomright',		       
+		}));
 
 	var r = new RegionPoly(map);
 	map.on('click', function(e) {
