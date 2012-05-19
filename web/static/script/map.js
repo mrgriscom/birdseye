@@ -364,7 +364,6 @@ function cache_layer(lyrspec, notfound) {
 	});
 }
 
-//url_param('mode', 'proxy')
 function source_layer(lyrspec, proxy, notfound) {
     if (proxy) {
 	return new L.TileLayer('/tileproxy/' + lyrspec.id + '/{z}/{x},{y}');
@@ -511,6 +510,11 @@ LayerControl = L.Control.Layers.extend({
 	    this.$label.addClass('layerlabel');
 	    this.$label.addClass('empty');
 	    $a.append(this.$label);
+
+	    var lc = this;
+	    this._map.on('zoomend', function() {
+		    lc.reorder();
+		});
 	},
 
 	initialize: function(layers) {
@@ -566,15 +570,7 @@ LayerControl = L.Control.Layers.extend({
 		    }
 		});
 	    this.active_layer = active_layer;
-
-	    var ordered_layers = [];
-	    $.each(this.overlay_types, function(i, e) {
-		    var lyr = lc.active_layers[e];
-		    if (lyr) {
-			ordered_layers.push(lyr);
-		    }
-		});
-	    this._map.order_layers(ordered_layers);
+	    this.reorder();
 
 	    if (this.active_layer) {
 		var lab = this.active_layer.id;
@@ -585,6 +581,18 @@ LayerControl = L.Control.Layers.extend({
 		var lab = null;
 	    }
 	    this.setLabel(lab);
+	},
+
+	reorder: function() {
+	    var ordered_layers = [];
+	    var lc = this;
+	    $.each(this.overlay_types, function(i, e) {
+		    var lyr = lc.active_layers[e];
+		    if (lyr) {
+			ordered_layers.push(lyr);
+		    }
+		});
+	    this._map.order_layers(ordered_layers);
 	},
 
 	select: function(e) {
