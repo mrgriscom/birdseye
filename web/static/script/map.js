@@ -220,11 +220,16 @@ $(document).ready(function() {
 
 	var DEFAULT_ZOOM = 2;
 
-	var map = new L.Map('map', {worldCopyJump: false});
+	L.Icon.Default.imagePath = '/img/leaflet';
+	var map = new L.Map('map', {
+		worldCopyJump: false,
+	    });
 	map.setView(new L.LatLng(30., 0.), DEFAULT_ZOOM);
 
 	var r = new RegionPoly(map);
-	map.on('click', function(e) { r.new_point(e); });
+	map.on('click', function(e) {
+		r.new_point(e);
+	    });
 	shortcut.add('backspace', function() {
 		r.delete_active();
 	    });
@@ -422,13 +427,12 @@ function render_icon(draw, width, height) {
 // create an icon rendered via canvas
 function render_marker(draw, w, h, anchor) {
     anchor = anchor || [0, 0];
-    var icon = L.Icon.extend({
+    return new L.Icon({
 	    iconUrl: render_icon(draw, w, h),
 	    shadowUrl: null,
 	    iconSize: new L.Point(w, h),
 	    iconAnchor: new L.Point(w * .5 * (anchor[0] + 1.), h * .5 * (1. - anchor[1])),
 	});
-    return new icon();
 }
 
 /*
