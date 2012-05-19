@@ -159,7 +159,7 @@ class TileCoverHandler(TileRequestHandler):
     def initialize(self, dbsess):
         self.sess = dbsess
 
-    def get(self, tile):
+    def _get(self, tile):
         desc = tile.get_descendants(self.sess, 8)
         def rel_tile(t):
             zdiff = t.z - tile.z

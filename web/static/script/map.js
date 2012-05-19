@@ -221,7 +221,7 @@ $(document).ready(function() {
 	var tile_bg = render_icon(alpha_checker, 256, 256);
 	var _onload = L.TileLayer.prototype._tileOnLoad;
 	L.TileLayer.prototype._tileOnLoad = function(e) {
-	    if (this.src.substring(0, 5) != 'data:') {
+	    if (this.src && this.src.substring(0, 5) != 'data:') {
 		$(this).css('background', 'url(' + tile_bg + ')');
 	    }
 	    _onload.call(this, e);
@@ -259,21 +259,20 @@ $(document).ready(function() {
 	shortcut.add('q', function() {
 		console.log(r.bounds_str());
 	    });
-	shortcut.add('w', function() {
-		map.panBy(new L.Point(20, 20));
-	    });
 
 	$.get('/layers', {default_zoom: DEFAULT_ZOOM}, function(data) {
+		var defaultLayer = null;
 		var layersControl = new LayerControl();
 		$.each(data, function(i, e) {
-			var layer = cache_layer(e, true);
-			layersControl.addBaseLayer(layer, e.name);
+			layersControl.addBaseLayer(e, e.name);
 			if (e.default) {
-			    map.addLayer(layer);
+			    defaultLayer = e;
 			}
 		    });
 		map.addControl(layersControl);
-
+		layersControl.select(defaultLayer);
+		layersControl.select('source');
+		layersControl.select('cached');
 	    }, 'json');
 
     });
@@ -433,7 +432,7 @@ function alpha_checker(ctx, w, h) {
 }
 
 function non_cached(ctx, w, h) {
-    ctx.globalAlpha = .5;
+    ctx.globalAlpha = .2;
     ctx.fillStyle = 'green';
     ctx.fillRect(.2*w,.2*h,.6*w,.6*h);
 }
@@ -485,17 +484,79 @@ LayerControl = L.Control.Layers.extend({
 	},
 
 	initialize: function(layers) {
-	    var overlays = {
-		source: new L.TileLayer(),
-		cached: new L.TileLayer(),
-		coverage: new L.TileLayer(),
-	    };
-	    L.Control.Layers.prototype.initialize.call(this, layers, overlays);
+	    this.active_layers = {}
+	    this.active_layer = null;
+
+	    var overlay_types = ['source', 'cached', 'coverage'];
+	    var ov = {};
+	    var lc = this;
+	    $.each(overlay_types, function(i, e) {
+		    ov[e] = {id: e, overlay: true};
+		    lc.active_layers[e] = null;
+		});
+	    L.Control.Layers.prototype.initialize.call(this, layers, ov);
 	},
 
-	_addItem: function(a, b) {
-	    console.log(a);
-	    L.Control.Layers.prototype._addItem.call(this, a, b);
+	_onInputClick: function() {
+	    var inputs = $(this._form).find('input');
+	    var lc = this;
+	
+	    var active_layer = null;
+	    var active_overlays = [];
+	    $.each(inputs, function(i, input) {
+		    var o = lc._layers[input.layerId];
+		    if (input.checked){
+			if (o.overlay) {
+			    active_overlays.push(o.layer.id);
+			} else {
+			    active_layer = o.layer;
+			}
+		    }
+		});
+
+	    $.each(this.active_layers, function(type, maplayer) {
+		    // remove existing layers if overlay type deselected or layer type changed
+		    if (maplayer && (active_layer != lc.active_layer || active_overlays.indexOf(type) == -1)) {
+			lc._map.removeLayer(maplayer);
+			lc.active_layers[type] = null;
+			console.log('removing layer: ' + type);
+		    }
+		});
+	    $.each(this.active_layers, function(type, maplayer) {
+		    // add layers if layer type defined and overlay type selected and no layer already set
+		    if (maplayer == null && active_layer != null && active_overlays.indexOf(type) != -1) {
+			var maplayer = ({
+				source: function(l) { return source_layer(l, url_param('mode', 'proxy'), true); },
+				cached: function(l) { return cache_layer(l, true); },
+				coverage: function(l) { return coverage_layer(l); },
+			    }[type])(active_layer);
+			lc._map.addLayer(maplayer);
+			lc.active_layers[type] = maplayer;
+			console.log('adding layer: ' + type + ' ' + active_layer.id);
+		    }
+		});
+	    this.active_layer = active_layer;
+
+	    if (this.active_layer) {
+		var lab = this.active_layer.id;
+		if (this.active_layers.source && !this.active_layers.cached) {
+		    lab += ' (live)';
+		}
+	    } else {
+		var lab = null;
+	    }
+	    this.setLabel(lab);
+	},
+
+	select: function(e) {
+	    var inputs = $(this._form).find('input');
+	    var lc = this;
+	    $.each(inputs, function(i, input) {
+		    var o = lc._layers[input.layerId];
+		    if (o.layer == e || o.layer.id == e) {
+			input.defaultChecked = true;
+		    }
+		});
+	    this._onInputClick();
 	}
     });
-
