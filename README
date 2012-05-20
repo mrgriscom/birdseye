@@ -1,4 +1,4 @@
-requirements
+REQUIREMENTS
 
 gpsd
 
@@ -18,17 +18,28 @@ lxml
 
 i should fill this out with stuff
 
+ABOUT
+
+the birdseye distribution has four main parts:
+
+1) a full-screen, moving-map navigation app (birdseye.py)
+2) a GPS tracking subsystem and logger (gpsmgr.py)
+3) a tool to locally cache data from mapservers for offline use (mapcache.py)
+4) a web console to explore the tile cache, manage waypoints and regions for download (web/webconsole.py)
 
 
-sample tile url spec: 'http://{s:0-3}.mapserver.org/tile/{z}/{x}/{y}'
+
+CONFIGURATION
+
+sample tile url spec: 'http://{s:0-3}.mapserver.org/tile/{z}/{x}/{y}.{type}'
 
 available directives:
 
 {z} - zoom level
 {x} - tile x coordinate, [0, 2^zoom)
 {y} - tile y coordinate, [0, 2^zoom)
-{-y} - tile y coordinate, but numbered starting in the south and increasing towards the north
-{qt} - quadtree index to tile
+{-y} - tile y coordinate, but numbered starting in the south and increasing towards the north (i.e., for WMS layers)
+{qt} - quadtree index to tile (i.e., for bing layers)
 {qt:ABCD} - quadtree index, but with customized symbols to refer to each quadrant
 {s:0-3} - server shard (0, 1, 2, 3, in this example)
 {s:abc} - server shard (a, b, c, in this example)
