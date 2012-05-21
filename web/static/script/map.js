@@ -232,35 +232,11 @@ $(document).ready(function() {
                     position: 'bottomright',                       
                 }));
 
-        var _r = new ActiveRegion(map);
-        map.on('click', function(e) {
-                _r.add_point(e);
-            });
-        shortcut.add('backspace', function() {
-                _r.undo_point();
-            });
+        var _r = new RegionManager(map);
+	_r.init();
 
         var _p = new ActiveLoc(map);
-        map.on('mousemove', function(e) {
-                _p.update(e);
-                _p.refresh_info();
-            });
-        map.on('zoomend', function() {
-                _p.refresh_info();
-            });
-        map.on('mouseout', function() {
-                _p.update(null);
-                _p.refresh_info();
-            });
-        map.on('move', function() {
-                _p.refresh_info();
-            });
-        _p.refresh_info();
-
-        //debug
-        shortcut.add('q', function() {
-                console.log(_r.export());
-            });
+	_p.init();
 
         $.get('/layers', {default_zoom: DEFAULT_ZOOM}, function(data) {
                 var defaultLayer = null;
@@ -270,6 +246,7 @@ $(document).ready(function() {
                         if (e.default) {
                             defaultLayer = e;
                         }
+			_r.add_layer(e);
                     });
                 map.addControl(layersControl);
                 layersControl.select(defaultLayer);
@@ -277,28 +254,16 @@ $(document).ready(function() {
                 layersControl.select('cached');
             }, 'json');
 
+
         $.get('/regions', function(data) {
                 $.each(data, function(i, reg) {
-                        var lls = [];
-                        $.each(reg.bound, function(i, coord) {
-                                lls.push(new L.LatLng(coord[0], coord[1]));
-                            });
-                        var bound = new L.Polygon(lls, {
-                                fill: false,
-                                color: '#444',
-                                weight: 2,
-                            });
-                        map.addLayer(bound);
-                        bound.on('mouseover', function() {
-                                bound.setStyle({
-                                        color: '#444',
-                                        weight: 2,
-                                    });
-                            });
-                        bound.on('mouseout', function() {
-                                console.log('out');
-                            });
+			_r.add_region(reg);
                     });
+            });
+
+        //debug
+        shortcut.add('q', function() {
+                console.log(_r.export());
             });
 
     });
@@ -337,29 +302,178 @@ function ActiveLoc(map) {
         var ll = (this.p ? map.layerPointToLatLng(map.containerPointToLayerPoint(this.p)) : map.getCenter());
         update_info(ll, map);
     }
+
+    this.init = function() {
+	var _p = this;
+        map.on('mousemove', function(e) {
+                _p.update(e);
+                _p.refresh_info();
+            });
+        map.on('zoomend', function() {
+                _p.refresh_info();
+            });
+        map.on('mouseout', function() {
+                _p.update(null);
+                _p.refresh_info();
+            });
+        map.on('move', function() {
+                _p.refresh_info();
+            });
+        this.refresh_info();
+    }
 }
 
-function ActiveRegion(map) {
-    this.r = null;
+function RegionManager(map) {
+    this.all_regions = [];
 
-    this.new_ = function() {
-        this.r = new RegionPoly(map);
+    this.region = null;
+    this.rpoly = null;
+
+    this.editing = false;
+    
+    this.init = function() {
+	var rm = this;
+	$('#regions #new').click(function() {
+		rm.activate();
+	    });
+	$('#regions #edit').click(function() {
+		rm.edit_mode();
+	    });
+
+	map.on('click', function(e) {
+                rm.add_point(e);
+            });
+        shortcut.add('backspace', function() {
+                rm.undo_point();
+            });
+    }
+
+    this.add_layer = function(layer) {
+	var $o = $('<option />');
+	$o.text(layer.name);
+	$o.val(layer.id);
+	if (!layer.downloadable) {
+	    $o.attr('disabled', 'true');
+	}
+	$('#regions #layer').append($o);
+    }
+
+    this.activate = function(reg) {
+	if (reg == null) {
+	    this.region = {};
+	    this.rpoly = new RegionPoly(map);
+
+	    $('#regions #clone').hide();
+	    $('#regions #edit').hide();
+
+	    this.edit_mode();
+	} else {
+	    this.region = reg;
+	    this.rpoly = reg.poly;
+	    this.highlight(reg, true);
+
+	    // move to top
+	    map.removeLayer(this.rpoly);
+	    map.addLayer(this.rpoly);
+
+	    $('#regions #name').val(this.region.name);
+	    if (reg.readonly) {
+		$('#regions #edit').attr('disabled', 'true');
+	    }
+
+	    map.fitBounds(this.rpoly.getBounds());
+	}
+
+	$('#regions').find('#manage').show();
+	$('#regions').find('#list').hide();
+
+	this.deactivate_other();
+    }
+
+    this.highlight = function(reg, on) {
+	reg.poly.setStyle({color: on ? '#ff0' : '#444'});
+	reg.$name.css('background-color', on ? '#fcc' : '');
+    }
+
+    this.add_region = function(reg) {
+	var lls = [];
+	$.each(reg.bound, function(i, coord) {
+		lls.push(new L.LatLng(coord[0], coord[1]));
+	    });
+	reg.poly = new L.Polygon(lls, {
+		fill: false,
+		weight: 2,
+		opacity: .8,
+	    });
+	reg.$name = $('<div />');
+	reg.$name.text(reg.name);
+	$('#regions #list').append(reg.$name);
+	this.highlight(reg, false);
+
+	this.bind_events(reg);
+	this.all_regions.push(reg);
+	map.addLayer(reg.poly);
+    }
+
+    this.bind_events = function(reg) {
+	var rm = this;
+
+	var bind = function(e, bindfunc) {
+	    bindfunc(e, 'mouseover', function() { rm.highlight(reg, true); });
+	    bindfunc(e, 'mouseout', function() { rm.highlight(reg, false); });
+	    bindfunc(e, 'click', function() { rm.activate(reg); });
+	}
+	bind(reg.poly, function(e, type, handler) { e.on(type, handler); });
+	bind(reg.$name, function(e, type, handler) { e[type](handler); });
+    }
+
+    this.deactivate_other = function() {
+	var rm = this;
+	$.each(this.all_regions, function(i, reg) {
+		if (reg == rm.region) {
+		    return;
+		}
+
+		reg.poly.setStyle({opacity: .4});
+		remove_handlers(reg.poly, 'click');
+	    });
+	if (this.region) {
+	    var unbind = function(e, unbindfunc) {
+		unbindfunc(e, 'mouseover');
+		unbindfunc(e, 'mouseout');
+	    };
+	    unbind(this.region.poly, function(e, type) { remove_handlers(e, type); });
+	    unbind(this.region.$name, function(e, type) { e.unbind(type); });
+	}
+    }
+
+    this.edit_mode = function() {
+	if (this.editing) {
+	    return;
+	}
+
+	this.editing = true;
+	if (this.rpoly) {
+	    map.removeLayer(this.rpoly);
+	}
+
+        this.rpoly = new RegionPoly(map, this.region.bound);
     }
 
     this.add_point = function(e) {
-        if (this.r) {
-            this.r.new_point(e);
+        if (this.editing) {
+            this.rpoly.new_point(e);
         }
     }
 
     this.undo_point = function() {
-        if (this.r) {
-            this.r.delete_active();
+        if (this.editing) {
+            this.rpoly.delete_active();
         }
     }
 
     this.export = function() {
-        return (this.r ? this.r.bounds_str() : null);
+        return (this.editing ? this.rpoly.bounds_str() : null);
     }
 }
 
@@ -546,6 +660,18 @@ function url_param(param, value) {
     var _ = function(s) { return '&' + s + '&'; };
     return _(params).indexOf(_(param + '=' + value)) != -1;
 }
+
+function remove_handlers(o, type) {
+    var handlers = o._leaflet_events[type];
+    if (handlers == null || handlers.length.length == 0) {
+	console.log('warning: no handlers of type ' + type, o);
+    }
+
+    $.each(o._leaflet_events[type], function(i, e) {
+	    o.off(type, e.action);
+	});
+}
+
 
 
 LayerControl = L.Control.Layers.extend({

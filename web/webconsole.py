@@ -47,6 +47,7 @@ class LayersHandler(web.RequestHandler):
                 'id': key,
                 'name': L.get('name', key),
                 'overlay': L.get('overlay', False),
+                'downloadable': L.get('cacheable', True),
             }
 
             url_spec = L['tile_url']
@@ -169,6 +170,23 @@ class TileCoverHandler(TileRequestHandler):
         self.set_header('Content-Type', 'text/json')
         self.write(json.dumps(payload))
 
+class RegionsHandler(web.RequestHandler):
+
+    def initialize(self, dbsess):
+        self.sess = dbsess
+
+    def get(self):
+        def mk_layer(r):
+            return {
+                'name': r.name,
+                'bound': r.coords(),
+                'readonly': r.name == mt.Region.GLOBAL_NAME
+            }
+
+        payload = [mk_layer(r) for r in sess.query(mt.Region)]
+        self.set_header('Content-Type', 'text/json')
+        self.write(json.dumps(payload))
+
 class RootContentHandler(web.StaticFileHandler):
     def get(self):
         super(RootContentHandler, self).get('map.html')
@@ -186,6 +204,7 @@ application = web.Application([
     (r'/tileproxy/([A-Za-z0-9_-]+)/([0-9]+)/([0-9]+),([0-9]+)', TileProxyHandler, {'tiledl': tiledl}),
     (r'/tileurl/([A-Za-z0-9_-]+)/([0-9]+)/([0-9]+),([0-9]+)', TileURLHandler),
     (r'/tilecover/([A-Za-z0-9_-]+)/([0-9]+)/([0-9]+),([0-9]+)', TileCoverHandler, {'dbsess': sess}),
+    (r'/regions', RegionsHandler, {'dbsess': sess}),
     (r'/', RootContentHandler, {'path': projpath('web/static')}),
     (r'/(.*)', web.StaticFileHandler, {'path': projpath('web/static')}),
 ])
