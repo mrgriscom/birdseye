@@ -109,6 +109,13 @@ body {
   padding-left: 15px;
 }
 
+.hint {
+  font-size: 70%;
+  font-style: italic;
+  color: grey;
+  padding-top: 5px;
+}
+
 </style>
 
 <div id="map" style="height: 100%;"></div>
@@ -132,6 +139,7 @@ body {
   <div id="manage" style="display: none;">
     <div><span id="namestatic"></span><input id="name" placeholder="region name"></input></div>
     <div><a href="#" id="clone">clone</a><a href="#" id="edit">edit</a></div>
+    <div id="edithint" class="hint" style="display: none;">bksp / shift+bksp to delete points</div>
     <hr>
     <div><select id="layer"></select><a href="#" id="curlayer">current</a></div>
     <div><input id="depth" size="8" placeholder="max depth"></input><a href="#" id="curdepth">current</a></div>

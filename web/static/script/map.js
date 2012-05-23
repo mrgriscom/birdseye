@@ -380,6 +380,9 @@ function RegionManager(map, get_active_layer) {
         shortcut.add('backspace', function() {
                 rm.undo_point();
             }, {disable_in_input: true});
+        shortcut.add('shift+backspace', function() {
+                rm.undo_point();
+            });
 
 	$.each($('#profile pre'), function(i, e) {
 		var $e = $(e);
@@ -532,6 +535,8 @@ function RegionManager(map, get_active_layer) {
             rm.validate_region();
         }
         this.validate_region();
+
+	$('#edithint').show()
     }
 
     this.validate_region = function() {
@@ -671,6 +676,7 @@ function RegionManager(map, get_active_layer) {
 	$('#regions #clone').show();
 	$('#regions #depth').val('');
 	$('#regions #refresh').removeAttr('checked');
+	$('#regions #edithint').hide();
 
 	if (curpoly.poly) {
 	    curpoly.destroy();
