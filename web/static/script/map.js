@@ -52,7 +52,7 @@ function RegionPoly(map, points) {
                 marker.setLatLng(pos);
                 r.vertexes.splice(r.find_point(marker), 1, pos);
                 r.update();
-		r.onchange();
+                r.onchange();
             });
         marker.on('click', function(e) {
                 r.set_active(marker);
@@ -106,16 +106,16 @@ function RegionPoly(map, points) {
         var i = this.find_point(this.active);
         this.points.splice(i + 1, 0, p);
         this.vertexes.splice(i + 1, 0, p.getLatLng());
-	this.onchange();
+        this.onchange();
     }
 
     this.remove_point = function(p) {
         var i = this.find_point(p);
         this.points.splice(i, 1);
         this.vertexes.splice(i, 1);
-	if (i != -1) {
-	    this.onchange();
-	}
+        if (i != -1) {
+            this.onchange();
+        }
     }
 
     this.delete_active = function() {
@@ -238,15 +238,15 @@ $(document).ready(function() {
                     maxWidth: 125,
                     position: 'bottomright',                       
                 }));
-	var layersControl = new LayerControl();
+        var layersControl = new LayerControl();
 
         var _r = new RegionManager(map, function() {
-		return layersControl.active_layer;
-	    });
-	_r.init();
+                return layersControl.active_layer;
+            });
+        _r.init();
 
         var _p = new ActiveLoc(map);
-	_p.init();
+        _p.init();
 
         $.get('/layers', {default_zoom: DEFAULT_ZOOM}, function(data) {
                 var defaultLayer = null;
@@ -255,7 +255,7 @@ $(document).ready(function() {
                         if (e.default) {
                             defaultLayer = e;
                         }
-			_r.add_layer(e);
+                        _r.add_layer(e);
                     });
                 map.addControl(layersControl);
                 layersControl.select(defaultLayer);
@@ -266,7 +266,7 @@ $(document).ready(function() {
 
         $.get('/regions', function(data) {
                 $.each(data, function(i, reg) {
-			_r.add_region(reg);
+                        _r.add_region(reg);
                     });
             });
 
@@ -313,7 +313,7 @@ function ActiveLoc(map) {
     }
 
     this.init = function() {
-	var _p = this;
+        var _p = this;
         map.on('mousemove', function(e) {
                 _p.update(e);
                 _p.refresh_info();
@@ -341,173 +341,185 @@ function RegionManager(map, get_active_layer) {
     this.editing = false;
     
     this.init = function() {
-	var rm = this;
-	$('#regions #new').click(function() {
-		rm.activate();
-	    });
-	$('#regions #submit').click(function() {
-		rm.create_download_profile();
-	    });
-	$('#regions #edit').click(function() {
-		rm.edit_mode();
-		$('#regions #edit').attr('disabled', 'true');
-	    });
-	$('#regions #clone').click(function() {
-		rm.region.new_ = true;
-		rm.edit_mode();
-		$('#regions #name').val('');
-		$('#regions #name').removeAttr('disabled');
-		$('#regions #edit').attr('disabled', 'true');
-		$('#regions #clone').attr('disabled', 'true');
-	    });
-	$('#regions #curlayer').click(function() {
-		$('#regions #layer').val(get_active_layer().id);
-	    });
-	$('#regions #curdepth').click(function() {
-		$('#regions #depth').val(map.getZoom());
-	    });
+        var rm = this;
+        $('#regions #new').click(function() {
+                rm.activate();
+            });
+        $('#regions #submit').click(function() {
+                rm.create_download_profile();
+            });
+        $('#regions #edit').click(function() {
+                rm.edit_mode();
+                $('#regions #edit').attr('disabled', 'true');
+            });
+        $('#regions #clone').click(function() {
+                rm.region.new_ = true;
+                rm.edit_mode();
+                $('#regions #name').val('');
+                $('#regions #name').removeAttr('disabled');
+                $('#regions #edit').attr('disabled', 'true');
+                $('#regions #clone').attr('disabled', 'true');
+            });
+        $('#regions #curlayer').click(function() {
+                $('#regions #layer').val(get_active_layer().id);
+            });
+        $('#regions #curdepth').click(function() {
+                $('#regions #depth').val(map.getZoom());
+            });
 
-	map.on('click', function(e) {
+        map.on('click', function(e) {
                 rm.add_point(e);
             });
         shortcut.add('backspace', function() {
                 rm.undo_point();
             });
+
+	$.each($('#profile pre'), function(i, e) {
+		var $e = $(e);
+		$e.unbind('click');
+		$e.click(function() {
+			var selection = window.getSelection();            
+			var range = document.createRange();
+			range.selectNodeContents($e[0]);
+			selection.removeAllRanges();
+			selection.addRange(range);
+		    });
+	    });
     }
 
     this.add_layer = function(layer) {
-	var $o = $('<option />');
-	$o.text(layer.name);
-	$o.val(layer.id);
-	if (!layer.downloadable) {
-	    $o.attr('disabled', 'true');
-	}
-	$('#regions #layer').append($o);
+        var $o = $('<option />');
+        $o.text(layer.name);
+        $o.val(layer.id);
+        if (!layer.downloadable) {
+            $o.attr('disabled', 'true');
+        }
+        $('#regions #layer').append($o);
     }
 
     this.activate = function(reg) {
-	if (reg == null) {
-	    this.region = {new_: true};
+        if (reg == null) {
+            this.region = {new_: true};
 
-	    $('#regions #clone').hide();
-	    $('#regions #edit').hide();
+            $('#regions #clone').hide();
+            $('#regions #edit').hide();
 
-	    this.edit_mode();
-	} else {
-	    this.region = reg;
-	    this.rpoly = reg.poly;
-	    this.highlight(reg, true);
+            this.edit_mode();
+        } else {
+            this.region = reg;
+            this.rpoly = reg.poly;
+            this.highlight(reg, true);
 
-	    // move to top
-	    map.removeLayer(this.rpoly);
-	    map.addLayer(this.rpoly);
+            // move to top
+            map.removeLayer(this.rpoly);
+            map.addLayer(this.rpoly);
 
-	    $('#regions #name').val(this.region.name);
-	    $('#regions #name').attr('disabled', 'true');
-	    if (reg.readonly) {
-		$('#regions #edit').attr('disabled', 'true');
-	    }
-	}
+            $('#regions #name').val(this.region.name);
+            $('#regions #name').attr('disabled', 'true');
+            if (reg.readonly) {
+                $('#regions #edit').attr('disabled', 'true');
+            }
+        }
 
-	$('#regions #layer').val(get_active_layer().id);
+        $('#regions #layer').val(get_active_layer().id);
 
-	$('#regions #manage').show();
-	$('#regions #list').hide();
+        $('#regions #manage').show();
+        $('#regions #list').hide();
 
-	this.deactivate_other();
+        this.deactivate_other();
     }
 
     this.zoom_to_active = function() {
-	map.fitBounds(this.rpoly.getBounds());
+        map.fitBounds(this.rpoly.getBounds());
     }
 
     this.highlight = function(reg, on) {
-	reg.poly.setStyle({color: on ? '#ff0' : '#444'});
-	reg.$name.css('background-color', on ? '#fcc' : '');
+        reg.poly.setStyle({color: on ? '#ff0' : '#444'});
+        reg.$name.css('background-color', on ? '#fcc' : '');
     }
 
     this.add_region = function(reg) {
-	var lls = [];
-	$.each(reg.bound, function(i, coord) {
-		lls.push(new L.LatLng(coord[0], coord[1]));
-	    });
-	reg.poly = new L.Polygon(lls, {
-		fill: false,
-		weight: 2,
-		opacity: .8,
-	    });
-	reg.$name = $('<div />');
-	reg.$name.text(reg.name);
-	$('#regions #list').append(reg.$name);
-	this.highlight(reg, false);
+        var lls = [];
+        $.each(reg.bound, function(i, coord) {
+                lls.push(new L.LatLng(coord[0], coord[1]));
+            });
+        reg.poly = new L.Polygon(lls, {
+                fill: false,
+                weight: 2,
+                opacity: .8,
+            });
+        reg.$name = $('<div />');
+        reg.$name.text(reg.name);
+        $('#regions #list').append(reg.$name);
+        this.highlight(reg, false);
 
-	this.bind_events(reg);
-	this.all_regions.push(reg);
-	map.addLayer(reg.poly);
+        this.bind_events(reg);
+        this.all_regions.push(reg);
+        map.addLayer(reg.poly);
     }
 
     this.bind_events = function(reg) {
-	var rm = this;
+        var rm = this;
 
-	var bind = function(e, bindfunc) {
-	    bindfunc(e, 'mouseover', function() { rm.highlight(reg, true); });
-	    bindfunc(e, 'mouseout', function() { rm.highlight(reg, false); });
-	    bindfunc(e, 'click', function() {
-		    if (!rm.region) {
-			rm.activate(reg);
-		    }
-		    rm.zoom_to_active();
-		});
-	}
-	bind(reg.poly, function(e, type, handler) { e.on(type, handler); });
-	bind(reg.$name, function(e, type, handler) { e[type](handler); });
+        var bind = function(e, bindfunc) {
+            bindfunc(e, 'mouseover', function() { rm.highlight(reg, true); });
+            bindfunc(e, 'mouseout', function() { rm.highlight(reg, false); });
+            bindfunc(e, 'click', function() {
+                    if (!rm.region) {
+                        rm.activate(reg);
+                    }
+                    rm.zoom_to_active();
+                });
+        }
+        bind(reg.poly, function(e, type, handler) { e.on(type, handler); });
+        bind(reg.$name, function(e, type, handler) { e[type](handler); });
     }
 
     this.deactivate_other = function() {
-	var rm = this;
-	$.each(this.all_regions, function(i, reg) {
-		if (reg == rm.region) {
-		    return;
-		}
+        var rm = this;
+        $.each(this.all_regions, function(i, reg) {
+                if (reg == rm.region) {
+                    return;
+                }
 
-		reg.poly.setStyle({opacity: .3});
-		remove_handlers(reg.poly, 'click');
-	    });
-	if (!this.region.new_) {
-	    var unbind = function(e, unbindfunc) {
-		unbindfunc(e, 'mouseover');
-		unbindfunc(e, 'mouseout');
-	    };
-	    unbind(this.region.poly, function(e, type) { remove_handlers(e, type); });
-	    unbind(this.region.$name, function(e, type) { e.unbind(type); });
-	}
+                reg.poly.setStyle({opacity: .3});
+                remove_handlers(reg.poly, 'click');
+            });
+        if (!this.region.new_) {
+            var unbind = function(e, unbindfunc) {
+                unbindfunc(e, 'mouseover');
+                unbindfunc(e, 'mouseout');
+            };
+            unbind(this.region.poly, function(e, type) { remove_handlers(e, type); });
+            unbind(this.region.$name, function(e, type) { e.unbind(type); });
+        }
     }
 
     this.edit_mode = function() {
-	if (this.editing) {
-	    return;
-	}
+        if (this.editing) {
+            return;
+        }
 
-	this.editing = true;
-	if (this.rpoly) {
-	    map.removeLayer(this.rpoly);
-	}
+        this.editing = true;
+        if (this.rpoly) {
+            map.removeLayer(this.rpoly);
+        }
 
         this.rpoly = new RegionPoly(map, this.region.bound);
-	var rm = this;
-	this.rpoly.onchange = function() {
-	    rm.region.changed = true;
-	    rm.validate_region();
-	}
-	this.validate_region();
+        var rm = this;
+        this.rpoly.onchange = function() {
+            rm.region.changed = true;
+            rm.validate_region();
+        }
+        this.validate_region();
     }
 
     this.validate_region = function() {
-	if (this.region.changed && !this.rpoly.is_degenerate()) {
-	    $('#regions #submit').removeAttr('disabled');
-	} else {
-	    $('#regions #submit').attr('disabled', 'true');
-	}
+        if (this.region.changed && !this.rpoly.is_degenerate()) {
+            $('#regions #submit').removeAttr('disabled');
+        } else {
+            $('#regions #submit').attr('disabled', 'true');
+        }
     }
 
     this.add_point = function(e) {
@@ -523,102 +535,100 @@ function RegionManager(map, get_active_layer) {
     }
 
     this.create_download_profile = function() {
-	var params = this.get_download_params();
-	var valid = this.validate_params(params, function(field, msg) {
-		alert(msg);
-	    });
-	if (!valid) {
-	    return;
-	}
+        var params = this.get_download_params();
+        var valid = this.validate_params(params, function(field, msg) {
+                alert(msg);
+            });
+        if (!valid) {
+            return;
+        }
 
-	var profile = this.build_download_profile(params);
-	this.present_profile(profile);
+        var profile = this.build_download_profile(params);
+        this.present_profile(profile);
     }
 
     this.get_download_params = function() {
-	return {
-	    name: $.trim($('#regions #name').val()),
-	    layer: $.trim($('#regions #layer').val()),
-	    depth: +($('#regions #depth').val() || 'NaN'),
-	    refresh: Boolean($('#regions #refresh').attr('checked')),
-	    update: this.region.changed && !this.region.new_,
-	    region: this.export(),
-	};
+        return {
+            name: $.trim($('#regions #name').val()),
+            layer: $.trim($('#regions #layer').val()),
+            depth: +($('#regions #depth').val() || 'NaN'),
+            refresh: Boolean($('#regions #refresh').attr('checked')),
+            update: this.region.changed && !this.region.new_,
+            region: this.export(),
+        };
     }
 
     this.validate_params = function(params, onerror) {
-	var errors = false;
-	var _err = function(f, m) {
-	    errors = true;
-	    onerror(f, m);
-	}
+        var errors = false;
+        var _err = function(f, m) {
+            errors = true;
+            onerror(f, m);
+        }
 
-	if (!params.name) {
-	    _err('name', 'region name is required');
-	}
-	var existing_names = [];
-	$.each(this.all_regions, function(i, e) {
-		existing_names.push(e.name);
-	    });
-	if (this.region.new_ && existing_names.indexOf(params.name) != -1) {
-	    _err('name', 'region name already in use');
-	}
-	if (isNaN(params.depth) || params.depth != Math.floor(params.depth)) {
-	    _err('depth', 'depth must be an integer');
-	}
-	if (params.depth < 0 || params.depth > 30) {
-	    _err('depth', 'depth must be between 0 and 30');
-	}
-	return !errors;
+        if (!params.name) {
+            _err('name', 'region name is required');
+        }
+        var existing_names = [];
+        $.each(this.all_regions, function(i, e) {
+                existing_names.push(e.name);
+            });
+        if (this.region.new_ && existing_names.indexOf(params.name) != -1) {
+            _err('name', 'region name already in use');
+        }
+        if (isNaN(params.depth) || params.depth != Math.floor(params.depth)) {
+            _err('depth', 'depth must be an integer');
+        }
+        if (params.depth < 0 || params.depth > 30) {
+            _err('depth', 'depth must be between 0 and 30');
+        }
+        return !errors;
     }
 
     this.build_download_profile = function(params) {
-	var lines = [];
-	var indent_level = 0;
-	var add = function(field, value, indent) {
-	    var s = '';
-	    for (var i = 0; i < indent_level; i++) {
-		s += '  ';
-	    }
-	    s += field + ':' + (value != null ? ' ' + value : '');
-	    lines.push(s);
-	    if (indent) {
-		indent_level++;
-	    }
-	}
+        var lines = [];
+        var indent_level = 0;
+        var add = function(field, value, indent) {
+            var s = '';
+            for (var i = 0; i < indent_level; i++) {
+                s += '  ';
+            }
+            s += field + ':' + (value != null ? ' ' + value : '');
+            lines.push(s);
+            if (indent) {
+                indent_level++;
+            }
+        }
 
-	add('name', params.name);
-	if (params.region) {
-	    add('region', params.region);
-	}
-	if (params.update) {
-	    add('update', 'true');
-	}
-	add('layers', null, true);
-	add(params.layer, null, true);
-	add('zoom', params.depth);
-	if (params.refresh) {
-	    add('refresh', 'true');
-	}
+        add('name', params.name);
+        if (params.region) {
+            add('region', params.region);
+        }
+        if (params.update) {
+            add('update', 'true');
+        }
+        add('layers', null, true);
+        add(params.layer, null, true);
+        add('zoom', params.depth);
+        if (params.refresh) {
+            add('refresh', 'true');
+        }
 
-	return lines.join('\n');
+        return lines.join('\n');
     }
 
     this.present_profile = function(profile) {
-	$('#profile #simple').text('Saving download profile...');
-	$.post('/saveprofile', profile, function(data) {
-		$('#profile #simple').text(DL_COMMAND + ' ' + data);
-	    });
+        $('#profile #simple').text('Saving download profile...');
+        $.post('/saveprofile', profile, function(data) {
+                $('#profile #simple').text(DL_COMMAND + ' ' + data);
+            });
 
-	$('#profile #literal').text('echo "\n' + profile + '\n" | ' + DL_COMMAND + ' -');
+        $('#profile #literal').text('echo "\n' + profile + '\n" | ' + DL_COMMAND + ' -');
 
-	$('#profile').dialog({
-		title: 'Run one of the following commands to download...',
-		minWidth: 600,
-		    maxWidth: 600,
-		    //modal: true,
-		resizable: false,
-	    });
+        $('#profile').dialog({
+                modal: true,
+                resizable: false,
+                minWidth: 600,
+            });
     }
 
     this.export = function() {
@@ -813,12 +823,12 @@ function url_param(param, value) {
 function remove_handlers(o, type) {
     var handlers = o._leaflet_events[type];
     if (handlers == null || handlers.length.length == 0) {
-	console.log('warning: no handlers of type ' + type, o);
+        console.log('warning: no handlers of type ' + type, o);
     }
 
     $.each(o._leaflet_events[type], function(i, e) {
-	    o.off(type, e.action);
-	});
+            o.off(type, e.action);
+        });
 }
 
 
