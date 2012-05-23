@@ -6,6 +6,7 @@
 <link rel="stylesheet" href="style/jquery-ui-1.8.20.css" />
 <script src="script/lib/jquery-1.7.2.min.js"></script>
 <script src="script/lib/jquery-ui-1.8.20.min.js"></script>
+<script src="script/lib/jquery.placeholder.js"></script>
 <script src="script/lib/leaflet-0.4.js"></script>
 <script src="script/lib/L.Control.Zoomslider.js"></script>
 <script src="script/lib/shortcut.js"></script>
@@ -67,6 +68,47 @@ body {
   padding-right: 0px;
 }
 
+#regions {
+  max-width: 12em;
+  padding: 20px;
+  border: 5px #aaa solid;
+  border-radius: 12px;
+  -moz-border-radius: 12px;
+  -webkit-border-radius: 12px;
+  background: rgba(255, 255, 255, .8);
+}
+
+#regions #list {
+  max-height: 300px;
+  overflow: auto;
+}
+
+.regchoice {
+  cursor: pointer;
+  text-indent: -0.7em;
+  padding-left: 1.2em;
+  padding-right: 5px;
+  border-radius: 4px;
+  -moz-border-radius: 4px;
+  -webkit-border-radius: 4px;
+}
+
+.placeholder {
+  color: grey;
+  font-style: italic;
+}
+
+#namestatic {
+  font-weight: bold;
+  font-size: 120%;
+}
+
+#regions a {
+  color: blue;
+  font-size: 70%;
+  padding-left: 15px;
+}
+
 </style>
 
 <div id="map" style="height: 100%;"></div>
@@ -86,19 +128,23 @@ body {
   <div id="qtlab">ix:<span id="qt" class="data"></span></div>
 </div>
 
-<div id="regions" style="z-index: 5000; position: absolute; top: 200px; bottom: 100px; right: 30px; max-width: 15em; background: rgba(255, 255, 255, .8); overflow: auto;">
+<div id="regions" style="display: none;">
   <div id="manage" style="display: none;">
-    <button id="clone">clone</button>
-    <button id="edit">edit</button>
-    <div>name: <input id="name"></input></div>
-    <div>layer: <select id="layer"></select><button id="curlayer">current</button></div>
-    <div>depth: <input id="depth"></input><button id="curdepth">current</button></div>
-    <div>refresh all? <input id="refresh" type="checkbox"/></div>
-    <button id="submit">go</button>
-    <button id="cancel">cancel</button>
+    <div><span id="namestatic"></span><input id="name" placeholder="region name"></input></div>
+    <div><a href="#" id="clone">clone</a><a href="#" id="edit">edit</a></div>
+    <hr>
+    <div><select id="layer"></select><a href="#" id="curlayer">current</a></div>
+    <div><input id="depth" size="8" placeholder="max depth"></input><a href="#" id="curdepth">current</a></div>
+    <div><input id="refresh" type="checkbox"/> <label for="refresh" title="re-download any tiles that already exist in the cache" style="font-size: 85%;">force refresh?</label></div>
+    <hr>
+    <table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+	<td><button id="submit">Download</button></td>
+	<td align="right" valign="bottom"><a href="#" id="cancel">cancel</a></td>
+    </tr></table>
   </div>
-  <div id="list">
-    <button id="new">new</button>
+  <div id="select">
+    <div id="new" class="regchoice" style="background: #ccf;">add new&hellip;</div>
+    <div id="list"></div>
   </div>
 </div>
 
