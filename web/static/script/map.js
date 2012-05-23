@@ -169,6 +169,13 @@ function RegionPoly(map, points) {
         return this.vertexes.length < 3;
     }
 
+    this.destroy = function() {
+	map.removeLayer(this.poly);
+	$.each(this.points, function(i, p) {
+		map.removeLayer(p);
+	    });
+    }
+
     this.init();
 }
 
@@ -348,6 +355,9 @@ function RegionManager(map, get_active_layer) {
         $('#regions #submit').click(function() {
                 rm.create_download_profile();
             });
+	$('#regions #cancel').click(function() {
+		rm.reset_all();
+	    });
         $('#regions #edit').click(function() {
                 rm.edit_mode();
                 $('#regions #edit').attr('disabled', 'true');
@@ -633,6 +643,42 @@ function RegionManager(map, get_active_layer) {
 
     this.export = function() {
         return (this.editing ? this.rpoly.bounds_str() : null);
+    }
+
+    this.reset_all = function() {
+	var all_reg = this.all_regions;
+	var curpoly = this.rpoly;
+
+	this.all_regions = [];
+	this.region = null;
+	this.rpoly = null;
+	this.editing = false;
+	
+        $('#regions #manage').hide();
+        $('#regions #list').show();
+
+	$('#regions #edit').show();
+	$('#regions #clone').show();
+	$('#regions #edit').removeAttr('disabled');
+	$('#regions #clone').removeAttr('disabled');
+	$('#regions #depth').val('');
+	$('#regions #refresh').removeAttr('checked');
+
+	if (curpoly.poly) {
+	    curpoly.destroy();
+	}
+	$('#regions #list div').remove();
+	var rm = this;
+	$.each(all_reg, function(i, reg) {
+		map.removeLayer(reg.poly);
+		delete reg.new_;
+		delete reg.poly;
+		delete reg.$name;
+		delete reg.changed;
+
+		rm.add_region(reg);
+	    });
+	map.setZoom(DEFAULT_ZOOM);
     }
 }
 
