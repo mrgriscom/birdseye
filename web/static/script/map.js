@@ -275,12 +275,6 @@ $(document).ready(function() {
                         _r.add_region(reg);
                     });
             });
-
-        //debug
-        shortcut.add('q', function() {
-                console.log(_r.export());
-            });
-
     });
 
 var IMG_ALPHABG = '/img/alphabg.png';
@@ -385,7 +379,7 @@ function RegionManager(map, get_active_layer) {
             });
         shortcut.add('backspace', function() {
                 rm.undo_point();
-            });
+            }, {disable_in_input: true});
 
 	$.each($('#profile pre'), function(i, e) {
 		var $e = $(e);
@@ -430,7 +424,7 @@ function RegionManager(map, get_active_layer) {
             $('#regions #edit').hide();
 
             this.edit_mode();
-	    this.name_edit(true);
+	    this.name_edit(true, '');
         } else {
             this.region = reg;
             this.rpoly = reg.poly;
@@ -704,6 +698,7 @@ function RegionManager(map, get_active_layer) {
 		    $('#regions').show();
 		    var container = $('#regions')[0];
 		    L.DomEvent.disableClickPropagation(container);
+		    L.DomEvent.addListener(container, 'mousewheel', L.DomEvent.stopPropagation);
 		    return container;
 		},
 	    });	
