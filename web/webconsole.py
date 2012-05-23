@@ -17,6 +17,7 @@ from datetime import datetime
 import time
 import email
 from optparse import OptionParser
+import tempfile
 
 from mapcache import maptile as mt
 from mapcache import mapdownload as md
@@ -193,6 +194,16 @@ class RegionsHandler(web.RequestHandler):
         self.set_header('Content-Type', 'text/json')
         self.write(json.dumps(payload))
 
+class SaveProfileHandler(web.RequestHandler):
+    
+    def post(self):
+        fd, path = tempfile.mkstemp('.dlprof', 'birdseye-')
+        with os.fdopen(fd, 'w') as f:
+            f.write(self.request.body + '\n')
+
+        self.set_header('Content-Type', 'text/plain')
+        self.write(path)
+
 class RootContentHandler(web.StaticFileHandler):
     def get(self):
         super(RootContentHandler, self).get('map.html')
@@ -228,6 +239,7 @@ if __name__ == "__main__":
         (r'/tileurl/([A-Za-z0-9_-]+)/([0-9]+)/([0-9]+),([0-9]+)', TileURLHandler),
         (r'/tilecover/([A-Za-z0-9_-]+)/([0-9]+)/([0-9]+),([0-9]+)', TileCoverHandler, {'dbsess': sess}),
         (r'/regions', RegionsHandler, {'dbsess': sess}),
+        (r'/saveprofile', SaveProfileHandler),
         (r'/', RootContentHandler, {'path': projpath('web/static')}),
         (r'/(.*)', web.StaticFileHandler, {'path': projpath('web/static')}),
     ])

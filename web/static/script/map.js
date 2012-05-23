@@ -33,6 +33,7 @@ function RegionPoly(map, points) {
     this.vertexes = [];
     this.poly = new L.Polygon(this.vertexes);
     this.active = null;
+    this.onchange = function(){};
 
     this.init = function() {
         this.import_points(points || []);
@@ -51,6 +52,7 @@ function RegionPoly(map, points) {
                 marker.setLatLng(pos);
                 r.vertexes.splice(r.find_point(marker), 1, pos);
                 r.update();
+		r.onchange();
             });
         marker.on('click', function(e) {
                 r.set_active(marker);
@@ -104,12 +106,16 @@ function RegionPoly(map, points) {
         var i = this.find_point(this.active);
         this.points.splice(i + 1, 0, p);
         this.vertexes.splice(i + 1, 0, p.getLatLng());
+	this.onchange();
     }
 
     this.remove_point = function(p) {
         var i = this.find_point(p);
         this.points.splice(i, 1);
         this.vertexes.splice(i, 1);
+	if (i != -1) {
+	    this.onchange();
+	}
     }
 
     this.delete_active = function() {
@@ -217,6 +223,7 @@ function tile_url(spec, zoom, point) {
 
 var DEFAULT_ZOOM = 2;
 var MAX_ZOOM = 20;
+var DL_COMMAND = 'python mapcache.py';
 
 $(document).ready(function() {
         monkey_patch();
@@ -231,8 +238,11 @@ $(document).ready(function() {
                     maxWidth: 125,
                     position: 'bottomright',                       
                 }));
+	var layersControl = new LayerControl();
 
-        var _r = new RegionManager(map);
+        var _r = new RegionManager(map, function() {
+		return layersControl.active_layer;
+	    });
 	_r.init();
 
         var _p = new ActiveLoc(map);
@@ -240,7 +250,6 @@ $(document).ready(function() {
 
         $.get('/layers', {default_zoom: DEFAULT_ZOOM}, function(data) {
                 var defaultLayer = null;
-                var layersControl = new LayerControl();
                 $.each(data, function(i, e) {
                         layersControl.addBaseLayer(e, e.name);
                         if (e.default) {
@@ -251,7 +260,7 @@ $(document).ready(function() {
                 map.addControl(layersControl);
                 layersControl.select(defaultLayer);
                 layersControl.select('source');
-                layersControl.select('cached');
+                //layersControl.select('cached');
             }, 'json');
 
 
@@ -323,7 +332,7 @@ function ActiveLoc(map) {
     }
 }
 
-function RegionManager(map) {
+function RegionManager(map, get_active_layer) {
     this.all_regions = [];
 
     this.region = null;
@@ -336,8 +345,26 @@ function RegionManager(map) {
 	$('#regions #new').click(function() {
 		rm.activate();
 	    });
+	$('#regions #submit').click(function() {
+		rm.create_download_profile();
+	    });
 	$('#regions #edit').click(function() {
 		rm.edit_mode();
+		$('#regions #edit').attr('disabled', 'true');
+	    });
+	$('#regions #clone').click(function() {
+		rm.region.new_ = true;
+		rm.edit_mode();
+		$('#regions #name').val('');
+		$('#regions #name').removeAttr('disabled');
+		$('#regions #edit').attr('disabled', 'true');
+		$('#regions #clone').attr('disabled', 'true');
+	    });
+	$('#regions #curlayer').click(function() {
+		$('#regions #layer').val(get_active_layer().id);
+	    });
+	$('#regions #curdepth').click(function() {
+		$('#regions #depth').val(map.getZoom());
 	    });
 
 	map.on('click', function(e) {
@@ -360,8 +387,7 @@ function RegionManager(map) {
 
     this.activate = function(reg) {
 	if (reg == null) {
-	    this.region = {};
-	    this.rpoly = new RegionPoly(map);
+	    this.region = {new_: true};
 
 	    $('#regions #clone').hide();
 	    $('#regions #edit').hide();
@@ -377,17 +403,22 @@ function RegionManager(map) {
 	    map.addLayer(this.rpoly);
 
 	    $('#regions #name').val(this.region.name);
+	    $('#regions #name').attr('disabled', 'true');
 	    if (reg.readonly) {
 		$('#regions #edit').attr('disabled', 'true');
 	    }
-
-	    map.fitBounds(this.rpoly.getBounds());
 	}
 
-	$('#regions').find('#manage').show();
-	$('#regions').find('#list').hide();
+	$('#regions #layer').val(get_active_layer().id);
+
+	$('#regions #manage').show();
+	$('#regions #list').hide();
 
 	this.deactivate_other();
+    }
+
+    this.zoom_to_active = function() {
+	map.fitBounds(this.rpoly.getBounds());
     }
 
     this.highlight = function(reg, on) {
@@ -421,7 +452,12 @@ function RegionManager(map) {
 	var bind = function(e, bindfunc) {
 	    bindfunc(e, 'mouseover', function() { rm.highlight(reg, true); });
 	    bindfunc(e, 'mouseout', function() { rm.highlight(reg, false); });
-	    bindfunc(e, 'click', function() { rm.activate(reg); });
+	    bindfunc(e, 'click', function() {
+		    if (!rm.region) {
+			rm.activate(reg);
+		    }
+		    rm.zoom_to_active();
+		});
 	}
 	bind(reg.poly, function(e, type, handler) { e.on(type, handler); });
 	bind(reg.$name, function(e, type, handler) { e[type](handler); });
@@ -434,10 +470,10 @@ function RegionManager(map) {
 		    return;
 		}
 
-		reg.poly.setStyle({opacity: .4});
+		reg.poly.setStyle({opacity: .3});
 		remove_handlers(reg.poly, 'click');
 	    });
-	if (this.region) {
+	if (!this.region.new_) {
 	    var unbind = function(e, unbindfunc) {
 		unbindfunc(e, 'mouseover');
 		unbindfunc(e, 'mouseout');
@@ -458,6 +494,20 @@ function RegionManager(map) {
 	}
 
         this.rpoly = new RegionPoly(map, this.region.bound);
+	var rm = this;
+	this.rpoly.onchange = function() {
+	    rm.region.changed = true;
+	    rm.validate_region();
+	}
+	this.validate_region();
+    }
+
+    this.validate_region = function() {
+	if (this.region.changed && !this.rpoly.is_degenerate()) {
+	    $('#regions #submit').removeAttr('disabled');
+	} else {
+	    $('#regions #submit').attr('disabled', 'true');
+	}
     }
 
     this.add_point = function(e) {
@@ -470,6 +520,105 @@ function RegionManager(map) {
         if (this.editing) {
             this.rpoly.delete_active();
         }
+    }
+
+    this.create_download_profile = function() {
+	var params = this.get_download_params();
+	var valid = this.validate_params(params, function(field, msg) {
+		alert(msg);
+	    });
+	if (!valid) {
+	    return;
+	}
+
+	var profile = this.build_download_profile(params);
+	this.present_profile(profile);
+    }
+
+    this.get_download_params = function() {
+	return {
+	    name: $.trim($('#regions #name').val()),
+	    layer: $.trim($('#regions #layer').val()),
+	    depth: +($('#regions #depth').val() || 'NaN'),
+	    refresh: Boolean($('#regions #refresh').attr('checked')),
+	    update: this.region.changed && !this.region.new_,
+	    region: this.export(),
+	};
+    }
+
+    this.validate_params = function(params, onerror) {
+	var errors = false;
+	var _err = function(f, m) {
+	    errors = true;
+	    onerror(f, m);
+	}
+
+	if (!params.name) {
+	    _err('name', 'region name is required');
+	}
+	var existing_names = [];
+	$.each(this.all_regions, function(i, e) {
+		existing_names.push(e.name);
+	    });
+	if (this.region.new_ && existing_names.indexOf(params.name) != -1) {
+	    _err('name', 'region name already in use');
+	}
+	if (isNaN(params.depth) || params.depth != Math.floor(params.depth)) {
+	    _err('depth', 'depth must be an integer');
+	}
+	if (params.depth < 0 || params.depth > 30) {
+	    _err('depth', 'depth must be between 0 and 30');
+	}
+	return !errors;
+    }
+
+    this.build_download_profile = function(params) {
+	var lines = [];
+	var indent_level = 0;
+	var add = function(field, value, indent) {
+	    var s = '';
+	    for (var i = 0; i < indent_level; i++) {
+		s += '  ';
+	    }
+	    s += field + ':' + (value != null ? ' ' + value : '');
+	    lines.push(s);
+	    if (indent) {
+		indent_level++;
+	    }
+	}
+
+	add('name', params.name);
+	if (params.region) {
+	    add('region', params.region);
+	}
+	if (params.update) {
+	    add('update', 'true');
+	}
+	add('layers', null, true);
+	add(params.layer, null, true);
+	add('zoom', params.depth);
+	if (params.refresh) {
+	    add('refresh', 'true');
+	}
+
+	return lines.join('\n');
+    }
+
+    this.present_profile = function(profile) {
+	$('#profile #simple').text('Saving download profile...');
+	$.post('/saveprofile', profile, function(data) {
+		$('#profile #simple').text(DL_COMMAND + ' ' + data);
+	    });
+
+	$('#profile #literal').text('echo "\n' + profile + '\n" | ' + DL_COMMAND + ' -');
+
+	$('#profile').dialog({
+		title: 'Run one of the following commands to download...',
+		minWidth: 600,
+		    maxWidth: 600,
+		    //modal: true,
+		resizable: false,
+	    });
     }
 
     this.export = function() {

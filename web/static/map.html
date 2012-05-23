@@ -3,7 +3,9 @@
 
 <link rel="stylesheet" href="style/leaflet-0.4.css" />
 <link rel="stylesheet" href="style/L.Control.Zoomslider.css" />
+<link rel="stylesheet" href="style/jquery-ui-1.8.20.css" />
 <script src="script/lib/jquery-1.7.2.min.js"></script>
+<script src="script/lib/jquery-ui-1.8.20.min.js"></script>
 <script src="script/lib/leaflet-0.4.js"></script>
 <script src="script/lib/L.Control.Zoomslider.js"></script>
 <script src="script/lib/shortcut.js"></script>
@@ -84,13 +86,13 @@ body {
   <div id="qtlab">ix:<span id="qt" class="data"></span></div>
 </div>
 
-<div id="regions" style="position: absolute; top: 200px; bottom: 100px; right: 30px; max-width: 15em; background: rgba(255, 255, 255, .8); overflow: auto;">
+<div id="regions" style="z-index: 5000; position: absolute; top: 200px; bottom: 100px; right: 30px; max-width: 15em; background: rgba(255, 255, 255, .8); overflow: auto;">
   <div id="manage" style="display: none;">
     <button id="clone">clone</button>
     <button id="edit">edit</button>
-    <div>name: <input id="name"/></div>
-    <div>layer: <select id="layer"/></div>
-    <div>depth: <input id="depth"/></div>
+    <div>name: <input id="name"></input></div>
+    <div>layer: <select id="layer"></select><button id="curlayer">current</button></div>
+    <div>depth: <input id="depth"></input><button id="curdepth">current</button></div>
     <div>refresh all? <input id="refresh" type="checkbox"/></div>
     <button id="submit">go</button>
     <button id="cancel">cancel</button>
@@ -98,6 +100,12 @@ body {
   <div id="list">
     <button id="new">new</button>
   </div>
+</div>
+
+<div id="profile" style="display: none; z-index: 10000;">
+<pre id="simple"></pre>
+<hr>
+<pre id="literal"></pre>
 </div>
 
 </body>
