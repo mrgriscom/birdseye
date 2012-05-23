@@ -29,8 +29,9 @@ def projpath(path):
 class LayersHandler(web.RequestHandler):
     """information about available layers"""
 
-    def initialize(self, dbsess=None):
+    def initialize(self, dbsess=None, custom=[]):
         self.sess = dbsess
+        self.custom_urls = custom
 
     def get(self):
         deflayer = None
@@ -66,7 +67,12 @@ class LayersHandler(web.RequestHandler):
 
             return info
 
-        payload = sorted((mk_layer(k) for k in settings.LAYERS.keys()), key=lambda l: l['name'])
+        def mk_custom(id, urlspec):
+            return {'id': id, 'name': id, 'url': urlspec, 'overlay': True, 'downloadable': False}
+            
+        layers = [mk_layer(k) for k in settings.LAYERS.keys()]
+        layers.extend(mk_custom('_custom%d' % i, url) for i, url in enumerate(self.custom_urls))
+        payload = sorted(layers, key=lambda l: l['name'])
         self.set_header('Content-Type', 'text/json')
         self.write(json.dumps(payload))
 
@@ -198,22 +204,14 @@ def tile_fetch_callback(meta, status, data):
 
 sess = mt.dbsess()
 tiledl = md.DownloadService(tile_fetch_callback, sess)
-application = web.Application([
-    (r'/layers', LayersHandler, {'dbsess': sess}),
-    (r'/tile/([A-Za-z0-9_-]+)/([0-9]+)/([0-9]+),([0-9]+)', TileHandler, {'dbsess': sess}),
-    (r'/tileproxy/([A-Za-z0-9_-]+)/([0-9]+)/([0-9]+),([0-9]+)', TileProxyHandler, {'tiledl': tiledl}),
-    (r'/tileurl/([A-Za-z0-9_-]+)/([0-9]+)/([0-9]+),([0-9]+)', TileURLHandler),
-    (r'/tilecover/([A-Za-z0-9_-]+)/([0-9]+)/([0-9]+),([0-9]+)', TileCoverHandler, {'dbsess': sess}),
-    (r'/regions', RegionsHandler, {'dbsess': sess}),
-    (r'/', RootContentHandler, {'path': projpath('web/static')}),
-    (r'/(.*)', web.StaticFileHandler, {'path': projpath('web/static')}),
-])
 
 if __name__ == "__main__":
 
     parser = OptionParser()
     parser.add_option("--ssl", dest="ssl", action='store_true',
                       help="enable ssl; prevents 'Referer' header from being sent to mapservers")
+    parser.add_option('-u', '--url', dest='urls', action='append',
+                      help='custom url specs')
 
     (options, args) = parser.parse_args()
 
@@ -223,6 +221,16 @@ if __name__ == "__main__":
         port = 8000
     ssl = {'certfile': projpath('web/ssl.crt')} if options.ssl else None
 
+    application = web.Application([
+        (r'/layers', LayersHandler, {'dbsess': sess, 'custom': options.urls or []}),
+        (r'/tile/([A-Za-z0-9_-]+)/([0-9]+)/([0-9]+),([0-9]+)', TileHandler, {'dbsess': sess}),
+        (r'/tileproxy/([A-Za-z0-9_-]+)/([0-9]+)/([0-9]+),([0-9]+)', TileProxyHandler, {'tiledl': tiledl}),
+        (r'/tileurl/([A-Za-z0-9_-]+)/([0-9]+)/([0-9]+),([0-9]+)', TileURLHandler),
+        (r'/tilecover/([A-Za-z0-9_-]+)/([0-9]+)/([0-9]+),([0-9]+)', TileCoverHandler, {'dbsess': sess}),
+        (r'/regions', RegionsHandler, {'dbsess': sess}),
+        (r'/', RootContentHandler, {'path': projpath('web/static')}),
+        (r'/(.*)', web.StaticFileHandler, {'path': projpath('web/static')}),
+    ])
     application.listen(port, ssl_options=ssl)
 
     try:
