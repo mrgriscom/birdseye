@@ -8,10 +8,7 @@ import logging
 from util.messaging import MessageSocket
 import util.util as u
 import zmq
-try:
-    import json
-except ImportError:
-    import simplejson as json
+import json
 import pickle
 import settings
 from contextlib import contextmanager
