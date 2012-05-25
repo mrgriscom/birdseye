@@ -248,13 +248,13 @@ $(document).ready(function() {
         var layersControl = new LayerControl();
 	map.addControl(layersControl);
 
+        var _p = new ActiveLoc(map);
+	map.addControl(_p.mk_control());
+
         var _r = new RegionManager(map, function() {
                 return layersControl.active_layer;
             });
 	map.addControl(_r.mk_control());
-
-        var _p = new ActiveLoc(map);
-	map.addControl(_p.mk_control());
 
         $.get('/layers', {default_zoom: DEFAULT_ZOOM}, function(data) {
                 var defaultLayer = null;
@@ -331,31 +331,9 @@ function ActiveLoc(map) {
         this.refresh_info();
     }
 
-    this.pos_info = function(ll) {
-	var tile_coord = function(k) {
-	    return Math.floor(k / 256.);
-	};
-	
-	var info = {
-	    lat: ll.lat,
-	    lon: ll.lng,
-	    zoom: map.getZoom(),
-	    effzoom_offset: Math.floor(Math.log(Math.cos(Math.PI * ll.lat / 180.)) / Math.log(0.5))
-	};
-	
-	if (Math.abs(ll.lat) <= L.Projection.SphericalMercator.MAX_LATITUDE) {
-	    var px = map.project(ll);
-	    info.tx = tile_coord(px.x);
-	    info.ty = tile_coord(px.y);
-	    info.qt = tile_url('{qt}', info.zoom, new L.Point(info.tx, info.ty));
-	}
-	
-	return info;
-    }
-    
     this.update_info = function(ll) {
 	var $info = $('#info');
-	var info = this.pos_info(ll);
+	var info = pos_info(ll, map);
 
 	var npad = function(n, pad) {
 	    var s = '' + n;
@@ -378,7 +356,7 @@ function ActiveLoc(map) {
 	$info.find('#lat').text(fmt_ll(info.lat, 'NS', 2));
 	$info.find('#lon').text(fmt_ll(info.lon, 'EW', 3));
 	$info.find('#zoom').text(info.zoom);
-	$info.find('#effzoom').text(info.zoom + info.effzoom_offset);
+	$info.find('#effzoom').text(info.effzoom);
 	$info.find('#zeff')[info.effzoom_offset == 0 ? 'hide' : 'show']();    
 	$info.find('#tx').text(info.tx != null ? fmt_t(info.tx) : '\u2013');
 	$info.find('#ty').text(info.ty != null ? fmt_t(info.ty) : '\u2013');
@@ -400,6 +378,29 @@ function ActiveLoc(map) {
 	this.init();
 	return new PosInfo();
     }
+}
+
+function pos_info(ll, map) {
+    var tile_coord = function(k) {
+	return Math.floor(k / 256.);
+    };
+	
+    var info = {
+	lat: ll.lat,
+	lon: ll.lng,
+	zoom: map.getZoom(),
+	effzoom_offset: Math.floor(Math.log(Math.cos(Math.PI * ll.lat / 180.)) / Math.log(0.5))
+    };
+    info.effzoom = info.zoom + info.effzoom_offset;
+	
+    if (Math.abs(ll.lat) <= L.Projection.SphericalMercator.MAX_LATITUDE) {
+	var px = map.project(ll);
+	info.tx = tile_coord(px.x);
+	info.ty = tile_coord(px.y);
+	info.qt = tile_url('{qt}', info.zoom, new L.Point(info.tx, info.ty));
+    }
+    
+    return info;
 }
 
 function RegionManager(map, get_active_layer) {
@@ -440,7 +441,7 @@ function RegionManager(map, get_active_layer) {
 		return false;
             });
         $('#regions #curdepth').click(function() {
-                $('#regions #depth').val(map.getZoom());
+                $('#regions #depth').val(pos_info(map.getCenter(), map).effzoom);
 		return false;
             });
 
