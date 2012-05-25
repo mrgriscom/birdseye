@@ -14,7 +14,7 @@ TILE_STORE_BLOB = False
 TILE_ROOT = '/home/drew/tiles/'
 # how to clump tiles into directory buckets (shouldn't have too many
 # entries in any one directory)
-# [2, 4]: '53392f0a.jpg' => '53/5339/53392f0a.jpg'
+# [2, 4]: 53392f0a.jpg => 53/5339/53392f0a.jpg
 TILE_BUCKETS = [3]
 
 # database connector for tracklog
@@ -60,10 +60,25 @@ LAYERS = {
         'overlay': False,
         'min_depth': 0,
     },
+
+
     'osmmapnik': {
         'tile_url': 'http://{s:abc}.tile.openstreetmap.org/{z}/{x}/{y}.png',
         'file_type': 'png',
         'name': 'openstreetmap standard (mapnik)',
+    },
+
+    'bingsatlab': {
+        'tile_url': 'http://ecn.dynamic.t{s:0-3}.tiles.virtualearth.net/comp/CompositionHandler/{qt}?it=A,G,L&n=z',
+        'file_type': 'jpg',
+        'name': 'bing satellite labelled',
+        'min_depth': 1,
+    },
+
+    'chartbundle': {
+        'tile_url': 'http://wms.chartbundle.com/tms/1.0.0/sec/{z}/{x}/{-y}.{type}',
+        'file_type': 'png',
+        'name': 'faa aeronautical (vfr sectional)',
     },
 }
 
