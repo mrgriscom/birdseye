@@ -21,9 +21,6 @@ body {
 }
 
 #info {
-  position: absolute;
-  bottom: 20px;
-  left: 20px;
   padding: 10px;
   background: rgba(255, 255, 255, .7);
   border: 5px #aaa solid;
@@ -32,7 +29,6 @@ body {
   -webkit-border-radius: 20px;
   text-align: right;
   font-size: 85%;
-  z-index: 500;
 }
 
 #info .data {
@@ -120,7 +116,7 @@ body {
 
 <div id="map" style="height: 100%;"></div>
 
-<div id="info">
+<div id="info" style="display: none;">
   <div class="data">
     <div style="visibility: hidden; height: 0px;">W000.00000&#xb0;</div>
     <div id="lat"></div>
