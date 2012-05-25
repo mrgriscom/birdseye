@@ -91,17 +91,19 @@ def LoadTexture(id, image, alpha=False):
   glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
   glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_DECAL)
 
+projdir = '/home/drew/dev/birdseye'
+
 def LoadStaticTextures ():
   global curstexid
   global markertexids
   curstexid = glGenTextures(1)
   markertexids = [glGenTextures(1) for i in range(0, 3)]
 
-  image = Image.open('%s/pixmap/cursor.png' % sys.path[0])
+  image = Image.open('%s/pixmap/cursor.png' % projdir)
   LoadTexture(curstexid, image, True)
 
   for (id, i) in zip(markertexids, range(1, 4)):
-    image = Image.open('%s/pixmap/target%d.png' % (sys.path[0], i))
+    image = Image.open('%s/pixmap/target%d.png' % (projdir, i))
     LoadTexture(id, image, True)
 
   #text
@@ -539,7 +541,7 @@ def load_waypoints ():
   global waypoints
   if waypoints == None:
     waypoints = {}
-    lines = [l.strip() for l in open('%s/data/waypoints' % sys.path[0]).readlines() if l.strip()]    
+    lines = [l.strip() for l in open('%s/data/waypoints' % projdir).readlines() if l.strip()]    
 
     for l in lines:
       k = l.find('#')

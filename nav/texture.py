@@ -24,7 +24,7 @@ def get_img_chunk (mode, zoom, x, y):
   if tile == None:
     tile = get_fallback_tile(mode, zoom, x, y)
   if tile == None:
-    missing = '%s/pixmap/missing.jpg' % sys.path[0]
+    missing = '%s/pixmap/missing.jpg' % '/home/drew/dev/birdseye'
     tile = open(missing)
   return tile
 
@@ -68,7 +68,7 @@ def tile_file (mode, zoom, x, y):
     conn = maptile.dbsess()
 
   layer = {
-    'map': 'gmap-map',
+    'map': 'googmap',
   }[mode]
   t = conn.query(maptile.Tile).get((layer, zoom, x, y))
   return t.open(conn) if t else None
