@@ -87,7 +87,7 @@ class Tile(Base):
     def get_descendants(self, sess, max_depth=None, min_depth=None):
         """query all descendant tiles from this tile (i.e., tiles at deeper zooms
         that overlap this tile's area"""
-        q = sess.query(Tile).filter(Tile.layer == self.layer).filter(Tile.qt > self.qt).filter(Tile.qt < (self.qt + '4'))
+        q = sess.query(Tile).filter_by(layer=self.layer).filter(Tile.qt > self.qt).filter(Tile.qt < (self.qt + '4'))
         if min_depth:
             q = q.filter(Tile.z >= self.z + min_depth)
         if max_depth:
@@ -163,7 +163,7 @@ class TileData(Base):
 
     def remove_blob(self, sess):
         """remove tile data from database -- ok if no db entry exists"""
-        sess.query(TileData).filter(TileData.uuid == self.uuid).delete()
+        sess.query(TileData).filter_by(uuid=self.uuid).delete()
 
     def remove_file(self):
         """remove tile data from filesystem -- ok if no file exists"""
@@ -318,7 +318,7 @@ def dbsess(connector=settings.TILE_DB, echo=False):
     sess = sessionmaker(bind=engine)()
 
     # initialize 'global' region
-    if not sess.query(Region).filter(Region.name == Region.GLOBAL_NAME).count():
+    if not sess.query(Region).filter_by(name=Region.GLOBAL_NAME).count():
         sess.add(Region.world())
         sess.commit()
 

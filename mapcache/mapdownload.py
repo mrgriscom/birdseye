@@ -102,7 +102,7 @@ def precompile_tile_url(template, file_type):
 def query_tiles(sess, layer, chunk, refresh_cutoff, refresh_cutoff_missing):
     """see existing_tiles; query the set of tiles 'chunk' to see which already exist.
     'cutoff's are timestamps instead of intervals now"""
-    q = sess.query(mt.Tile).filter(mt.Tile.layer == layer).filter(tuple_(mt.Tile.z, mt.Tile.x, mt.Tile.y).in_(list(chunk)))
+    q = sess.query(mt.Tile).filter_by(layer=layer).filter(tuple_(mt.Tile.z, mt.Tile.x, mt.Tile.y).in_(list(chunk)))
     def cutoff_criteria():
         if refresh_cutoff is not None:
             yield and_(mt.Tile.uuid != null_digest(), mt.Tile.fetched_on > refresh_cutoff)
@@ -187,7 +187,7 @@ def commit_tile(sess, t):
 
     # if updated existing tile, possibly delete the old tile image data
     if old_uuid and old_uuid != null_digest():
-        if not sess.query(mt.Tile).filter(mt.Tile.uuid == old_uuid).count():
+        if not sess.query(mt.Tile).filter_by(uuid=old_uuid).count():
                 # no tile references this file uuid anymore; delete
                 mt.TileData(uuid=old_uuid).remove(sess)
 

@@ -99,7 +99,7 @@ def db_validate(args):
     sess = mt.dbsess()
 
     try:
-        region = sess.query(mt.Region).filter(mt.Region.name == args['name']).one()
+        region = sess.query(mt.Region).filter_by(name=args['name']).one()
         if args['region']:
             if args['update']:
                 region.boundary = args['region'].boundary
