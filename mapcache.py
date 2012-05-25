@@ -33,14 +33,14 @@ def parse_yaml_args(f):
 
     args['region'] = validate_region(str(data['region'])) if 'region' in data else None
 
-    args['layers'] = dict((str(name), parse_yaml_layer(info)) for name, info in data['layers'].iteritems())
-    for lyrname in args['layers'].keys():
-        validate_layer(lyrname)
+    args['layers'] = [parse_yaml_layer(str(name), info) for name, info in data['layers'].iteritems()]
+    for layer in args['layers']:
+        validate_layer(layer)
 
     return args
 
-def parse_yaml_layer(data):
-    lyr = {}
+def parse_yaml_layer(layername, data):
+    lyr = {'name': layername}
 
     if 'zoom' not in data:
         raise RuntimeError('layer zoom level required')
@@ -87,7 +87,9 @@ def validate_region(region_def):
 
     return mt.Region('__', coords)
 
-def validate_layer(layername):
+def validate_layer(layer):
+    layername = layer['name']
+
     if not layername in settings.LAYERS:
         raise RuntimeError('unrecognized layer "%s"' % layername)
     if not u.layer_property(layername, 'cacheable', True):
@@ -120,29 +122,31 @@ def db_validate(args):
 
 ## DOWNLOADER INTERFACE
 
-def download(region, overlay, max_depth, refresh_mode):
-    curses.wrapper(download_curses, region, overlay, max_depth, refresh_mode)
+def download(poly, layers):
+    curses.wrapper(download_curses, poly, layers)
 
-def download_curses(w, polygon, overlay, max_depth, refresh_mode):
-    te = mapdownload.TileEnumerator(polygon, max_depth, overlay)
+def download_curses(w, polygon, layers):
+    te = mapdownload.TileEnumerator(polygon, layers)
     monitor(w, 0, te, 'Enumerating', 15, 3)
 
-    print_tile_counts(w, mapdownload.tile_counts(te.tiles), 'Tiles in region', 4, 2, max_depth=max_depth)
+    print_tile_counts(w, mapdownload.tile_counts(te.tiles), 'Tiles in region', 4, 2)
 
-    tc = mapdownload.TileCuller(te.tiles, overlay, None, None, mt.dbsess())
-#    tc = mapdownload.TileCuller(te.tiles, overlay, timedelta(0), timedelta(0), mt.dbsess())
+    tc = mapdownload.TileCuller(te.tiles, layers, mt.dbsess())
     monitor(w, 1, tc, 'Culling', 15)
 
-    print_tile_counts(w, mapdownload.tile_counts(tc.tiles), 'Tiles to download', 4, 19, max_depth=max_depth)
+    print_tile_counts(w, mapdownload.tile_counts(tc.tiles, max(L['zoom'] for L in layers)), 'Tiles to download', 4, 19)
 
-    td = mapdownload.TileDownloader(tc.tiles, overlay, mt.dbsess())
+    td = mapdownload.TileDownloader(tc.tiles, mt.dbsess())
     monitor(w, 2, td, 'Downloading', 15, erry=3)
 
     try:
         while True:
-            pass
+            time.sleep(.01)
     except KeyboardInterrupt:
         pass
+
+
+
 
 def monitor(w, y, thread, caption, width, sf=0, erry=None):
     thread.start()
@@ -184,16 +188,14 @@ def status(caption, (k, n, e), width=None, est_sigfig=0):
     return '%s %s%6.2f%% [%*d/%s]%s' % ((caption + ':').ljust(width + 1), '+' if overflow else ' ',
             100. * ratio, pad, k, max_str, errstr)
 
-def print_tile_counts(w, counts, header, y, x, width=None, zheader='Zoom', max_depth=None):
+def print_tile_counts(w, counts, header, y, x, width=None, zheader='Zoom'):
     if not width:
         width = max(len(header), 10)
     zwidth = len(zheader)
 
-    maxz = max(len(counts), max_depth + 1 if max_depth != None else 0)
-
     w.addstr(y, 0, zheader)
     w.addnstr(y, zwidth + x, header.rjust(width), width)
-    for i in range(0, maxz):
+    for i in range(0, len(counts)):
         w.addstr(y + 1 + i, 0, '%*d' % (zwidth, i))
         w.addstr(y + 1 + i, zwidth + x, '%*d' % (width, counts[i] if i < len(counts) else 0))
 
@@ -219,8 +221,7 @@ if __name__ == "__main__":
     except RuntimeError, e:
         fatal(str(e))
 
-    (layername, layerinfo) = args['layers'].items()[0]
-    download(args['region'], layername, layerinfo['zoom'], layerinfo['refr'])
+    download(args['region'], args['layers'])
 
 
 

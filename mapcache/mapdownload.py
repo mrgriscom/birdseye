@@ -111,9 +111,9 @@ def query_tiles(sess, layer, chunk, refresh_cutoff, refresh_cutoff_missing):
     coc = list(cutoff_criteria())
     if coc:
         q = q.filter(or_(*coc))
-    return set((t.z, t.x, t.y) for t in q)
+    return set((layer, t.z, t.x, t.y) for t in q)
 
-def existing_tiles(sess, tiles, layer, refresh_window=None, refresh_window_missing=None, chunk_size=CULL_RESOLUTION):
+def find_existing_tiles(sess, tiles, layer, refresh_window=None, refresh_window_missing=None, chunk_size=CULL_RESOLUTION):
     """generator that returns which tiles in the set 'tiles' already exist. if a
     'refresh_window' is defined, only tiles fetched within that days (e.g., 7 days)
     are considered to exist.
@@ -136,6 +136,9 @@ def random_walk_level(tiles, window=10):
     fashion, to make it less obvious that tiles are being ripped by a
     script"""
 
+    def xy(t):
+        return t[2:]
+
     target = None
     while tiles:
         if not target:
@@ -143,17 +146,17 @@ def random_walk_level(tiles, window=10):
             target = u.rand_elem(tiles)
         else:
             # pick the as-yet-unvisited tile closest to the previous active point
-            metric = lambda t: u.manhattan_dist(target[1:], t[1:])
+            metric = lambda t: u.manhattan_dist(xy(target), xy(t))
             closest = min(metric(t) for t in tiles)
             candidates = [t for t in tiles if metric(t) == closest]
             target = random.choice(candidates)
 
         # determine the current 'screen view' centered around the active point (width 'window'),
         # and download in random order
-        (xmin, ymin) = [f - window / 2 for f in target[1:]]
+        (xmin, ymin) = [f - window / 2 for f in xy(target)]
         (xmax, ymax) = [f + window - 1 for f in (xmin, ymin)]
 
-        swatch = list(u.set_filter(tiles, lambda (z, x, y): x >= xmin and x <= xmax and y >= ymin and y <= ymax))
+        swatch = list(u.set_filter(tiles, lambda (lyr, z, x, y): x >= xmin and x <= xmax and y >= ymin and y <= ymax))
         random.shuffle(swatch)
         for t in swatch:
             yield t
@@ -161,17 +164,15 @@ def random_walk_level(tiles, window=10):
 def random_walk(tiles):
     """iterate through all tiles in a random-walk fashion, but proceeding through
     zoom levels in order (download 'bigger' tiles first)"""
-    zooms = sorted(set(z for z, x, y in tiles))
+    zooms = sorted(set(z for lyr, z, x, y in tiles))
     for zoom in zooms:
-        for t in random_walk_level(u.set_filter(tiles, lambda (z, x, y): z == zoom)):
+        for t in random_walk_level(u.set_filter(tiles, lambda (lyr, z, x, y): z == zoom)):
             yield t
 
-def register_tile(sess, tile, layer, data, hashfunc):
+def register_tile(sess, tile, data, hashfunc):
     """save a tile to disk and to database"""
-    z, x, y = tile
-    t = mt.Tile(layer=layer, z=z, x=x, y=y)
-    t.save(data, hashfunc, sess=sess)
-    commit_tile(sess, t)
+    tile.save(data, hashfunc, sess=sess)
+    commit_tile(sess, tile)
 
 def commit_tile(sess, t):
     existing = sess.query(mt.Tile).get(t.pk())
@@ -204,34 +205,35 @@ def normdata(status, data):
     not_found = (status != httplib.OK)
     return data if not not_found else None
 
-def _process_tile(sess, tile, layer, status, data):
+def _process_tile(sess, tile, status, data):
     """process a tile download result, accounting for some common errors"""
 
     if status in (httplib.OK, httplib.NOT_FOUND, httplib.FOUND):
         try:
-            register_tile(sess, tile, layer, normdata(status, data), digest)
+            register_tile(sess, tile, normdata(status, data), digest)
         except IOError:
-            raise Exception('%s: could not write file' % str(tile))
+            raise Exception('%s: could not write file' % str(tile.pk()))
     else:
         if status == None:
-            raise Exception('Tile %s: download error %s' % (str(tile), data))
+            raise Exception('Tile %s: download error %s' % (str(tile.pk()), data))
         elif status == httplib.FORBIDDEN:
             raise Exception('Warning: we may have been banned')
         else:
-            raise Exception('Unrecognized response code %d (tile %s)' % (status, str(tile)))
+            raise Exception('Unrecognized response code %d (tile %s)' % (status, str(tile.pk())))
 
-def process_tile(sess, tile, layer, status, data):
+def process_tile(sess, tile, status, data):
     try:
-        _process_tile(sess, tile, layer, status, data)
+        _process_tile(sess, tile, status, data)
         return (True, None)
     except Exception, e:
         return (False, str(e))
 
-def tile_counts(tiles):
+def tile_counts(tiles, max_depth=None):
     """determine how many tiles to be downloaded at each zoom level"""
-    totals = collections.defaultdict(lambda: 0, u.map_reduce(tiles, lambda (z, x, y): [(z,)], len))
-    max_zoom = max(totals.keys()) if totals else -1
-    return [totals[z] for z in range(max_zoom + 1)]
+    totals = collections.defaultdict(lambda: 0, u.map_reduce(tiles, lambda (layer, z, x, y): [(z,)], len))
+    max_tile_zoom = max(totals.keys()) if totals else -1
+    max_depth = max_depth if max_depth is not None else -1
+    return [totals[z] for z in range(max(max_tile_zoom, max_depth) + 1)]
 
 # monitor threads below must have a function:
 #   status() => (# processed, total # to process, # error occurred thus far)
@@ -239,18 +241,22 @@ def tile_counts(tiles):
 class TileEnumerator(threading.Thread):
     """a monitorable thread to enumerate all tiles in a download region"""
 
-    def __init__(self, region, depth, layer=None):
+    def __init__(self, region, layers):
         threading.Thread.__init__(self)
 
-        self.tess = mt.RegionTessellation(region, depth, min_zoom=u.layer_property(layer, 'min_depth', 0))
-        self.est_num_tiles = self.tess.size_estimate()
+        def mk_tess(layer, depth):
+            return mt.RegionTessellation(region, depth, min_zoom=u.layer_property(layer, 'min_depth', 0))
+        self.tesss = dict((L['name'], mk_tess(L['name'], L['zoom'])) for L in layers)
+        self.est_num_tiles = sum(tess.size_estimate() for tess in self.tesss.values())
         self.tiles = set()
         self.count = 0
 
     def run(self):
-        for t in self.tess:
-            self.tiles.add(t)
-            self.count += 1
+        for layer, tess in self.tesss.iteritems():
+            for t in tess:
+                z, x, y = t
+                self.tiles.add((layer, z, x, y))
+                self.count += 1
         self.est_num_tiles = self.count
 
     def status(self):
@@ -260,30 +266,40 @@ class TileCuller(threading.Thread):
     """a monitorable thread to enumerate which tiles must be downloaded (i.e., do not
     already exist)"""
 
-    def __init__(self, tiles, layer, refresh_window, refresh_window_missing, sess):
+    def __init__(self, tiles, layers, sess):
         threading.Thread.__init__(self)
 
         self.tiles = tiles
-        self.existing_tiles = set()
-
-        if refresh_window == timedelta(0) and refresh_window_missing == timedelta(0):
-            # we must (re-)download all; don't bother checking existing
-            self.existing_tile_stream = None
-        else:
-            self.existing_tile_stream = existing_tiles(sess, tiles, layer, refresh_window, refresh_window_missing)
+        self.layers = dict((L['name'], L) for L in layers)
+        self.sess = sess
 
         self.num_tiles = len(tiles)
         self.num_processed = 0
 
     def run(self):
-        if self.existing_tile_stream:
-            for existing, num_queried in self.existing_tile_stream:
-                self.existing_tiles |= existing
+        tiles_by_layer = u.map_reduce(self.tiles, lambda (layer, z, x, y): [(layer, (z, x, y))])
+        for layername, layer_tiles in tiles_by_layer.iteritems():
+            self.cull_layer(self.layers[layername], layer_tiles)
+
+    def cull_layer(self, layer, tiles):
+        refr_window = timedelta(days=layer['refr']) if layer['refr'] is not None else None
+        refresh_window = refresh_window_missing = refr_window
+
+        if refresh_window == timedelta(0) and refresh_window_missing == timedelta(0):
+            # we must (re-)download all; don't bother checking existing
+            existing_tile_stream = None
+        else:
+            existing_tile_stream = find_existing_tiles(self.sess, tiles, layer['name'], refresh_window, refresh_window_missing)
+
+        existing_tiles = set()
+        if existing_tile_stream:
+            for existing, num_queried in existing_tile_stream:
+                existing_tiles |= existing
                 self.num_processed += num_queried
         else:
-            self.num_processed = self.num_tiles
+            self.num_processed += len(tiles)
 
-        self.tiles = self.tiles - self.existing_tiles
+        self.tiles -= existing_tiles
 
     def status(self):
         return (self.num_processed, self.num_tiles, 0)
@@ -291,12 +307,10 @@ class TileCuller(threading.Thread):
 class TileDownloader(threading.Thread):
     """a monitorable thread that downloads and processes tiles"""
 
-    def __init__(self, tiles, layer, sess):
+    def __init__(self, tiles, sess):
         threading.Thread.__init__(self)
 
         self.tiles = tiles
-        self.layer = layer
-
         self.num_tiles = len(tiles)
 
         # error count and last error are displayed in the curses interface
@@ -306,7 +320,7 @@ class TileDownloader(threading.Thread):
         self.dlmgr = DownloadManager(limit=100)
 
         def process(key, status, data):
-            return process_tile(sess, key, self.layer, status, data)
+            return process_tile(sess, key, status, data)
         self.dlpxr = DownloadProcessor(self.dlmgr, process, self.num_tiles, self.onerror)
 
     def run(self):
@@ -314,7 +328,9 @@ class TileDownloader(threading.Thread):
         self.dlpxr.start()
 
         for t in random_walk(self.tiles):
-            self.dlmgr.enqueue((t, tile_url(t, self.layer)))
+            layer, z, x, y = t
+            tile = mt.Tile(layer=layer, z=z, x=x, y=y)
+            self.dlmgr.enqueue((tile, tile.url()))
 
         self.dlpxr.join()
         self.dlmgr.terminate()
@@ -383,7 +399,7 @@ class DownloadService(object):
         if cache:
             if overwrite or not self.sess.query(mt.Tile).get(t.pk()):
                 try:
-                    _process_tile(self.sess, (t.z, t.x, t.y), t.layer, status, data)
+                    _process_tile(self.sess, t, status, data)
                 except:
                     pass
 
