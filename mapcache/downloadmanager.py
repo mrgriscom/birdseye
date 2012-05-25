@@ -159,7 +159,8 @@ class Connection(object):
             # could read mime type here, but it's better to define it globally for the layer
             return (result.status, result.read())
         except (httplib.HTTPException, socket.error), e:
-            if not isinstance(e, httplib.BadStatusLine): # TODO: dns resolution errors here too?
+            # don't log for common errors (malformed http response, bad dns lookup, etc.)
+            if not isinstance(e, (httplib.BadStatusLine, socket.gaierror)):
                 logging.exception('http connection error during request')
             self.error = True
             raise
