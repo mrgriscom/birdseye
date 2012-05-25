@@ -706,7 +706,7 @@ function RegionManager(map, get_active_layer) {
         add(params.layer, null, true);
         add('zoom', params.depth);
         if (params.refresh) {
-            add('refresh', 'true');
+            add('refresh-mode', 'always');
         }
 
         return lines.join('\n');

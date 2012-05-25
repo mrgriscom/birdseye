@@ -272,8 +272,12 @@ class Region(Base):
             overlap = world & unrolled
             overlap.shift(0, -180. - edge)
             return overlap
-        edge0 = ((min_lon + 180.) // 360. - .5) * 360.
-        return reduce(lambda a, b: a | b, (poly_segment(edge) for edge in range(edge0, max_lon, 360.)))
+        def lonrange():
+            k = ((min_lon + 180.) // 360. - .5) * 360.
+            while k < max_lon:
+                yield k
+                k += 360.
+        return reduce(lambda a, b: a | b, (poly_segment(edge) for edge in lonrange()))
 
     def merc_poly(self):
         """like poly(), but transformed to mercator coordinates"""
