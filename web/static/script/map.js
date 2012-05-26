@@ -1,182 +1,62 @@
 
+var DEFAULT_ZOOM = 2;
+var MAX_ZOOM = 20;
+var DL_COMMAND = 'python mapcache.py';
+var ICON_PATH = '/img/leaflet';
+var WAYPOINT_PREC = 4;
 
-function draw_pinpoint(highlight, halo, ctx, w, h) {
-    var circle = function(rad) {
-        ctx.beginPath();
-        ctx.arc(.5*w, .5*h, rad, 0, 2*Math.PI, false);
-        ctx.closePath();
-    }
+function init_console() {
+    monkey_patch();
 
-    circle(5);
-    ctx.fillStyle = (highlight ? '#ff8' : '#06f');
-    ctx.fill();
+    L.Icon.Default.imagePath = ICON_PATH;
+    var map = new L.Map('map', {
+	    maxZoom: MAX_ZOOM,
+	    worldCopyJump: false,
+	});
+    map.setView(new L.LatLng(30., 0.), DEFAULT_ZOOM);
+    map.addControl(new L.Control.Scale({
+            maxWidth: 125,
+	    position: 'bottomright',                       
+	}));
+    var layersControl = new LayerControl();
+    map.addControl(layersControl);
 
-    circle(5);
-    ctx.strokeStyle = '#222';
-    ctx.lineWidth = 1;
-    ctx.stroke();
+    var _p = new ActiveLoc(map);
+    map.addControl(_p.mk_control());
 
-    if (halo) {
-        circle(9);
-        ctx.strokeStyle = 'rgba(255, 0, 0, .5)';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-    }
-}
+    var _r = new RegionManager(map, function() {
+	    return layersControl.active_layer;
+	});
+    map.addControl(_r.mk_control());
 
-function RegionPoly(map, points) {
-    var ICON_DEFAULT = render_marker(function(ctx, w, h) { draw_pinpoint(false, false, ctx, w, h); }, 20, 20);
-    var ICON_ACTIVE = render_marker(function(ctx, w, h) { draw_pinpoint(true, true, ctx, w, h); }, 20, 20);
-    var ICON_NEXT = render_marker(function(ctx, w, h) { draw_pinpoint(false, true, ctx, w, h); }, 20, 20);
+    map.addControl(new NewWaypoint());
 
-    this.points = [];
-    this.vertexes = [];
-    this.poly = new L.Polygon(this.vertexes);
-    this.active = null;
-    this.onchange = function(){};
+    $.get('/layers', {default_zoom: DEFAULT_ZOOM}, function(data) {
+	    var defaultLayer = null;
+	    $.each(data, function(i, e) {
+		    layersControl.addBaseLayer(e, e.name);
+		    if (e.default) {
+			defaultLayer = e;
+		    }
+		    _r.add_layer(e);
+		});
+	    layersControl.select(defaultLayer);
+	    layersControl.select('source');
+	    //layersControl.select('cached');
+	}, 'json');
 
-    this.init = function() {
-        this.import_points(points || []);
-        map.addLayer(this.poly);
-    }
+    $.get('/regions', function(data) {
+	    $.each(data, function(i, reg) {
+		    _r.add_region(reg);
+		});
+	});
 
-    this.new_point = function(e) {
-        var marker = new L.Marker(this.rectify_lon(e.latlng), {
-                draggable: true,
-                icon: ICON_DEFAULT
-            });
-        var r = this;
-        marker.on('drag', function(e) {
-                var pos = r.rectify_lon(marker.getLatLng(), r.adjacent_point(marker, false));
-                // update marker with corrected position
-                marker.setLatLng(pos);
-                r.vertexes.splice(r.find_point(marker), 1, pos);
-                r.update();
-                r.onchange();
-            });
-        marker.on('click', function(e) {
-                r.set_active(marker);
-            });
-
-        map.addLayer(marker);
-        this.insert_point(marker);
-        this.set_active(marker);
-        this.update();
-    }
-
-    this.rectify_lon = function(ll, ref) {
-        // correct lon so it's within 180 degrees of lon of ref point;
-        // this lets us handle polygons that straddle the IDL
-        ref = ref || this.active;
-        if (ref != null) {
-            var rect_lon = anglenorm(ll.lng, 180. - ref.getLatLng().lng);
-            return new L.LatLng(ll.lat, rect_lon, true);
-        } else {
-            return ll;
-        }
-    }
-
-    this.delete_point = function(p) {
-        var new_active = (p == this.active ? this.adjacent_point(p, false) : this.active);
-
-        map.removeLayer(p);
-        this.remove_point(p);
-        this.set_active(new_active);
-        this.update();
-    }
-
-    this.set_active = function(p) {
-        var r = this;
-        var set_icons = function(on) {
-            if (r.active) {
-                r.active.setIcon(on ? ICON_ACTIVE : ICON_DEFAULT);
-                var next = r.adjacent_point(r.active, true);
-                if (next) {
-                    next.setIcon(on ? ICON_NEXT : ICON_DEFAULT);
-                }
-            }
-        }
-
-        set_icons(false);
-        this.active = p;
-        set_icons(true);
-    }
-
-    this.insert_point = function(p) {
-        var i = this.find_point(this.active);
-        this.points.splice(i + 1, 0, p);
-        this.vertexes.splice(i + 1, 0, p.getLatLng());
-        this.onchange();
-    }
-
-    this.remove_point = function(p) {
-        var i = this.find_point(p);
-        this.points.splice(i, 1);
-        this.vertexes.splice(i, 1);
-        if (i != -1) {
-            this.onchange();
-        }
-    }
-
-    this.delete_active = function() {
-        if (this.active) {
-            this.delete_point(this.active);
-        }
-    }
-
-    this.find_point = function(p) {
-        return this.points.indexOf(p);
-    }
-
-    this.adjacent_point = function(p, next) {
-        if (this.points.length > 1) {
-            var offset = (next ? 1 : -1);
-            return this.points[(this.find_point(p) + this.points.length + offset) % this.points.length];
-        } else {
-            return null;
-        }
-    }
-
-    this.update = function() {
-        this.poly.setLatLngs(this.vertexes);
-    }
-
-    this.import_points = function(points) {
-        var r = this;
-        $.each(points, function(i, p) {
-                r.new_point({latlng: new L.LatLng(p[0], p[1])});
-            });
-    }
-
-    this.bounds = function() {
-        var coords = [];
-        $.each(this.vertexes, function(i, ll) {
-                coords.push([ll.lat, anglenorm(ll.lng)]);
-            });
-        return coords;
-    }
-
-    this.bounds_str = function(prec) {
-        prec = prec || 5;
-        var cfmt = [];
-        $.each(this.bounds(), function(i, c) {
-                cfmt.push(c[0].toFixed(prec) + ',' + c[1].toFixed(prec));
-            });
-        return cfmt.join(' ');
-    }
-
-    this.is_degenerate = function() {
-        return this.vertexes.length < 3;
-    }
-
-    this.destroy = function() {
-	map.removeLayer(this.poly);
-	$.each(this.points, function(i, p) {
-		map.removeLayer(p);
-	    });
-    }
-
-    this.init();
+    $.get('/waypoints', function(data) {
+	    $.each(data, function(i, pt) {
+		    var wpt = new Waypoint(new L.LatLng(pt.pos[0], pt.pos[1]), pt);
+		    map.addLayer(wpt);
+		});
+	});
 }
 
 function tile_url(spec, zoom, point) {
@@ -227,66 +107,6 @@ function tile_url(spec, zoom, point) {
 
     return spec;
 }
-
-var DEFAULT_ZOOM = 2;
-var MAX_ZOOM = 20;
-var DL_COMMAND = 'python mapcache.py';
-var ICON_PATH = '/img/leaflet';
-var WAYPOINT_PREC = 4;
-
-$(document).ready(function() {
-        monkey_patch();
-
-        L.Icon.Default.imagePath = ICON_PATH;
-        var map = new L.Map('map', {
-                maxZoom: MAX_ZOOM,
-                worldCopyJump: false,
-            });
-        map.setView(new L.LatLng(30., 0.), DEFAULT_ZOOM);
-        map.addControl(new L.Control.Scale({
-                    maxWidth: 125,
-                    position: 'bottomright',                       
-                }));
-        var layersControl = new LayerControl();
-	map.addControl(layersControl);
-
-        var _p = new ActiveLoc(map);
-	map.addControl(_p.mk_control());
-
-        var _r = new RegionManager(map, function() {
-                return layersControl.active_layer;
-            });
-	map.addControl(_r.mk_control());
-
-	map.addControl(new NewWaypoint());
-
-        $.get('/layers', {default_zoom: DEFAULT_ZOOM}, function(data) {
-                var defaultLayer = null;
-                $.each(data, function(i, e) {
-                        layersControl.addBaseLayer(e, e.name);
-                        if (e.default) {
-                            defaultLayer = e;
-                        }
-                        _r.add_layer(e);
-                    });
-                layersControl.select(defaultLayer);
-                layersControl.select('source');
-                //layersControl.select('cached');
-            }, 'json');
-
-        $.get('/regions', function(data) {
-                $.each(data, function(i, reg) {
-                        _r.add_region(reg);
-                    });
-            });
-
-	$.get('/waypoints', function(data) {
-		$.each(data, function(i, pt) {
-			var wpt = new Waypoint(new L.LatLng(pt.pos[0], pt.pos[1]), pt);
-			map.addLayer(wpt);
-		    });
-	    });
-    });
 
 var IMG_ALPHABG = '/img/alphabg.png';
 var IMG_NOCACHE = '/img/nocache.png';
@@ -798,6 +618,161 @@ function RegionManager(map, get_active_layer) {
     }
 }   
 
+function RegionPoly(map, points) {
+    var ICON_DEFAULT = render_marker(function(ctx, w, h) { draw_pinpoint(false, false, ctx, w, h); }, 20, 20);
+    var ICON_ACTIVE = render_marker(function(ctx, w, h) { draw_pinpoint(true, true, ctx, w, h); }, 20, 20);
+    var ICON_NEXT = render_marker(function(ctx, w, h) { draw_pinpoint(false, true, ctx, w, h); }, 20, 20);
+
+    this.points = [];
+    this.vertexes = [];
+    this.poly = new L.Polygon(this.vertexes);
+    this.active = null;
+    this.onchange = function(){};
+
+    this.init = function() {
+        this.import_points(points || []);
+        map.addLayer(this.poly);
+    }
+
+    this.new_point = function(e) {
+        var marker = new L.Marker(this.rectify_lon(e.latlng), {
+                draggable: true,
+                icon: ICON_DEFAULT
+            });
+        var r = this;
+        marker.on('drag', function(e) {
+                var pos = r.rectify_lon(marker.getLatLng(), r.adjacent_point(marker, false));
+                // update marker with corrected position
+                marker.setLatLng(pos);
+                r.vertexes.splice(r.find_point(marker), 1, pos);
+                r.update();
+                r.onchange();
+            });
+        marker.on('click', function(e) {
+                r.set_active(marker);
+            });
+
+        map.addLayer(marker);
+        this.insert_point(marker);
+        this.set_active(marker);
+        this.update();
+    }
+
+    this.rectify_lon = function(ll, ref) {
+        // correct lon so it's within 180 degrees of lon of ref point;
+        // this lets us handle polygons that straddle the IDL
+        ref = ref || this.active;
+        if (ref != null) {
+            var rect_lon = anglenorm(ll.lng, 180. - ref.getLatLng().lng);
+            return new L.LatLng(ll.lat, rect_lon, true);
+        } else {
+            return ll;
+        }
+    }
+
+    this.delete_point = function(p) {
+        var new_active = (p == this.active ? this.adjacent_point(p, false) : this.active);
+
+        map.removeLayer(p);
+        this.remove_point(p);
+        this.set_active(new_active);
+        this.update();
+    }
+
+    this.set_active = function(p) {
+        var r = this;
+        var set_icons = function(on) {
+            if (r.active) {
+                r.active.setIcon(on ? ICON_ACTIVE : ICON_DEFAULT);
+                var next = r.adjacent_point(r.active, true);
+                if (next) {
+                    next.setIcon(on ? ICON_NEXT : ICON_DEFAULT);
+                }
+            }
+        }
+
+        set_icons(false);
+        this.active = p;
+        set_icons(true);
+    }
+
+    this.insert_point = function(p) {
+        var i = this.find_point(this.active);
+        this.points.splice(i + 1, 0, p);
+        this.vertexes.splice(i + 1, 0, p.getLatLng());
+        this.onchange();
+    }
+
+    this.remove_point = function(p) {
+        var i = this.find_point(p);
+        this.points.splice(i, 1);
+        this.vertexes.splice(i, 1);
+        if (i != -1) {
+            this.onchange();
+        }
+    }
+
+    this.delete_active = function() {
+        if (this.active) {
+            this.delete_point(this.active);
+        }
+    }
+
+    this.find_point = function(p) {
+        return this.points.indexOf(p);
+    }
+
+    this.adjacent_point = function(p, next) {
+        if (this.points.length > 1) {
+            var offset = (next ? 1 : -1);
+            return this.points[(this.find_point(p) + this.points.length + offset) % this.points.length];
+        } else {
+            return null;
+        }
+    }
+
+    this.update = function() {
+        this.poly.setLatLngs(this.vertexes);
+    }
+
+    this.import_points = function(points) {
+        var r = this;
+        $.each(points, function(i, p) {
+                r.new_point({latlng: new L.LatLng(p[0], p[1])});
+            });
+    }
+
+    this.bounds = function() {
+        var coords = [];
+        $.each(this.vertexes, function(i, ll) {
+                coords.push([ll.lat, anglenorm(ll.lng)]);
+            });
+        return coords;
+    }
+
+    this.bounds_str = function(prec) {
+        prec = prec || 5;
+        var cfmt = [];
+        $.each(this.bounds(), function(i, c) {
+                cfmt.push(c[0].toFixed(prec) + ',' + c[1].toFixed(prec));
+            });
+        return cfmt.join(' ');
+    }
+
+    this.is_degenerate = function() {
+        return this.vertexes.length < 3;
+    }
+
+    this.destroy = function() {
+	map.removeLayer(this.poly);
+	$.each(this.points, function(i, p) {
+		map.removeLayer(p);
+	    });
+    }
+
+    this.init();
+}
+
 Waypoint = L.Marker.extend({
 	options: {
 	    dragPopup: true,
@@ -1077,6 +1052,30 @@ function non_cached(ctx, w, h) {
     }
 }
 */
+
+function draw_pinpoint(highlight, halo, ctx, w, h) {
+    var circle = function(rad) {
+        ctx.beginPath();
+        ctx.arc(.5*w, .5*h, rad, 0, 2*Math.PI, false);
+        ctx.closePath();
+    }
+
+    circle(5);
+    ctx.fillStyle = (highlight ? '#ff8' : '#06f');
+    ctx.fill();
+
+    circle(5);
+    ctx.strokeStyle = '#222';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    if (halo) {
+        circle(9);
+        ctx.strokeStyle = 'rgba(255, 0, 0, .5)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+    }
+}
 
 function mod(a, b) {
     if (a < 0) {
