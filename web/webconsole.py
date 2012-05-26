@@ -7,7 +7,7 @@ sys.path.insert(0, project_root)
 from tornado.ioloop import IOLoop
 import tornado.web as web
 import tornado.gen as gen
-from tornado.httpclient import HTTPError
+from tornado.httpclient import HTTPError, AsyncHTTPClient
 from tornado.template import Template
 import logging
 import os
@@ -18,6 +18,8 @@ import time
 import email
 from optparse import OptionParser
 import tempfile
+import urllib
+from lxml import etree
 
 from mapcache import maptile as mt
 from mapcache import mapdownload as md
@@ -250,6 +252,53 @@ class SaveWaypointHandler(web.RequestHandler):
         with open(u.waypoints_path(), 'w') as f:
             f.writelines(lns)
 
+class LocationSearchHandler(web.RequestHandler):
+
+    @web.asynchronous
+    @gen.engine
+    def get(self):
+        query = self.get_argument('q')
+
+        http_client = AsyncHTTPClient()
+        request_url = 'http://maps.google.com/maps?' + urllib.urlencode({'q': query, 'output': 'kml'})
+        try:
+            resp = yield gen.Task(http_client.fetch, request_url)
+            if resp.code != 200 or 'kml' not in resp.headers.get('Content-Type', ''):
+                raise RuntimeError('no response or invalid response received')
+            payload = {
+                'status': 'success',
+                'results': self.process_response(etree.parse(resp.buffer)),
+            }
+        except Exception, e:
+            payload = {'status': 'error', 'message': str(e)}
+
+        self.set_header('Content-Type', 'text/json')
+        self.write(json.dumps(payload))
+        self.finish()
+
+    def process_response(self, kml):
+        def _(tag):
+            KML_NS = 'http://earth.google.com/kml/2.0'
+            return '{%s}%s' % (KML_NS, tag)
+
+        def make_marker(placemark):
+            name = placemark.find(_('name')).text
+            descnode = placemark.find(_('Snippet'))
+            desc = descnode.text if descnode is not None else None
+            pos = placemark.find('%s/%s' % (_('Point'), _('coordinates'))).text
+            rangenode = placemark.find('%s/%s' % (_('LookAt'), _('range')))
+            radius = .433 * float(rangenode.text) if rangenode is not None else None # scale factor is tan(hfov/2) * (h/w)^.5, where hfov=60*, w:h=16:9
+
+            return {
+                'name': name,
+                'desc': desc,
+                'lat': float(pos.split(',')[1]),
+                'lon': float(pos.split(',')[0]),
+                'radius': radius,
+            }
+
+        return [make_marker(pm) for pm in kml.findall('.//%s' % _('Placemark'))]
+
 class RootContentHandler(web.StaticFileHandler):
     def get(self):
         super(RootContentHandler, self).get('map.html')
@@ -288,6 +337,7 @@ if __name__ == "__main__":
         (r'/waypoints', WaypointsHandler),
         (r'/saveprofile', SaveProfileHandler),
         (r'/savewaypoint', SaveWaypointHandler),
+        (r'/locsearch', LocationSearchHandler),
         (r'/', RootContentHandler, {'path': projpath('web/static')}),
         (r'/(.*)', web.StaticFileHandler, {'path': projpath('web/static')}),
     ])

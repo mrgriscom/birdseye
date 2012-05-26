@@ -1,7 +1,7 @@
 REQUIREMENTS
 
 gpsd
-
+python >= 2.6 and < 3
 
 python:
 
@@ -11,12 +11,10 @@ sqlalchemy >= 0.7
 numpy
 PIL
 pyopengl
-polygon (2.0.x?)
+polygon (2.0.x?) -- todo: replace with shapely?
 ncurses
 yaml
 lxml
-
-i should fill this out with stuff
 
 ABOUT
 

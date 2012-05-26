@@ -776,23 +776,24 @@ function RegionPoly(map, points) {
     this.init();
 }
 
+function get_icon(type) {
+    return new L.Icon({
+	    iconUrl: ICON_PATH + '/marker-icon-' + type + '.png',
+	    shadowUrl: ICON_PATH + '/marker-shadow.png',
+	    iconSize: new L.Point(25, 41),
+	    iconAnchor: new L.Point(13, 41),
+	    popupAnchor: new L.Point(0, -33),
+	    shadowSize: new L.Point(41, 41)
+	});
+}
+
 Waypoint = L.Marker.extend({
 	options: {
 	    dragPopup: true,
 	},
 
 	setIconType: function(type) {
-	    var mk_icon = function(type) {
-		return new L.Icon({
-			iconUrl: ICON_PATH + '/marker-icon-' + type + '.png',
-			shadowUrl: ICON_PATH + '/marker-shadow.png',
-			iconSize: new L.Point(25, 41),
-			iconAnchor: new L.Point(13, 41),
-			popupAnchor: new L.Point(0, -33),
-			shadowSize: new L.Point(41, 41)
-		    });
-	    };
-	    var icon = (type != null ? mk_icon(type) : new L.Icon.Default());
+	    var icon = (type != null ? get_icon(type) : new L.Icon.Default());
 	    this.setIcon(icon);
 	},
 
@@ -929,23 +930,103 @@ Waypoint = L.Marker.extend({
 
     });
 
+SearchResult = L.Marker.extend({
+	onAdd: function(map) {
+	    L.Marker.prototype.onAdd.call(this, map);
+
+	    this.setIcon(get_icon('searchresult'));
+
+	    /*
+	    this.$content = $('#point-template').clone();
+	    var $c = this.$content;
+	    
+	    this._key = this.options.name;
+	    this.options.name = this.options.name || '';
+	    this.options.comment = this.options.comment || '';
+	    $c.find('#namestatic').text(this.options.name);
+	    $c.find('#name').val(this.options.name);
+	    $c.find('#descstatic').text(this.options.comment);
+	    $c.find('#desc').val(this.options.comment);
+	    this.set_pos_info();
+
+	    this.edit_mode(this._key == null);
+	    if (this._key == null) {
+		this.onchange();
+	    }
+
+	    var wpt = this;
+	    $c.find('#edit').click(function() {
+		    wpt.edit_mode(true);
+	    */
+	},
+
+	bounds: function() {
+	    var p = this.getLatLng();
+	    var r = Math.max(this.options.radius, 300.); // the minimum radius determines the max zoom level
+
+	    var map_w = $('#map').width();
+	    var map_h = $('#map').height();
+	    var mean_dim = Math.sqrt(map_w * map_h);
+	    var r_x = r * map_w / mean_dim;
+	    var r_y = r * map_h / mean_dim;
+	    var METERS_PER_DEGREE = 2 * Math.PI * 6371009. / 360.; // hack
+	    var lat_offset = r_y / METERS_PER_DEGREE;
+	    var lon_offset = r_x / METERS_PER_DEGREE / Math.cos(p.lat * Math.PI / 180.);
+
+	    return new L.LatLngBounds(new L.LatLng(p.lat - lat_offset, p.lng - lon_offset), new L.LatLng(p.lat + lat_offset, p.lng + lon_offset));
+	},
+
+    });
+
 NewWaypoint = L.Control.extend({
 	options: {
 	    position: 'topright'
 	},
 
 	onAdd: function (map) {
-	    return ctrl_init('#add-wp', function($div, div) {
-		    $div.find('a').click(function() {
+	    return ctrl_init('#wp-panel', function($div, div) {
+		    L.DomEvent.disableClickPropagation(div);	    
+		    $div.find('#newwpt').click(function() {
 			    wpt = new Waypoint(map.getCenter());
 			    map.addLayer(wpt);
 
 			    // hack or else popup is immediately closed
 			    setTimeout(function() { wpt.openPopup(); }, 200);
 			});
+		    var $searchbutton = $div.find('#search');
+		    $searchbutton.click(function() {
+			    var query = $.trim($div.find('#searchquery').val());
+			    if (!query) {
+				return;
+			    }
+			    
+			    $searchbutton.attr('disabled', 'true');
+			    $.get('/locsearch', {q: query}, function(data) {
+				    $searchbutton.removeAttr('disabled');
+
+				    if (data.status == 'success') {
+					show_search_results(data.results, map);
+				    } else {
+					alert('search failed: ' + data.message);
+				    }
+				});
+			    
+			});
 		});
 	},
     });	
+
+function show_search_results(results, map) {					
+    var bounds = new L.LatLngBounds();
+
+    $.each(results, function(i, e) {
+	    var m = new SearchResult(new L.LatLng(e.lat, e.lon), e);
+	    bounds.extend(m.bounds());
+	    map.addLayer(m);
+	});
+
+    map.fitBounds(bounds);
+}
 
 ManagementOptions = L.Control.extend({
 	options: {
@@ -967,6 +1048,7 @@ ManagementOptions = L.Control.extend({
 	    }
 
 	    return ctrl_init('#management-opts', function($div, div) {
+		    L.DomEvent.disableClickPropagation(div);	    
 		    bind($div.find('#region'), mo.options.enable_regions);
 		    bind($div.find('#waypoint'), mo.options.enable_waypoints);
 		});
