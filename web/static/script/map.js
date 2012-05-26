@@ -232,6 +232,7 @@ var DEFAULT_ZOOM = 2;
 var MAX_ZOOM = 20;
 var DL_COMMAND = 'python mapcache.py';
 var ICON_PATH = '/img/leaflet';
+var WAYPOINT_PREC = 4;
 
 $(document).ready(function() {
         monkey_patch();
@@ -835,9 +836,9 @@ Waypoint = L.Marker.extend({
 	    var wpt = this;
 	    $c.find('#edit').click(function() {
 		    wpt.edit_mode(true);
-		    wpt.refresh_popup();
 		});
 	    $c.find('#submit').click(function() {
+		    wpt.save();
 		});
 	    $c.find('#name').change(function() {
 		    wpt.onchange();
@@ -858,12 +859,14 @@ Waypoint = L.Marker.extend({
 	},
 
 	refresh_popup: function() {
-	    this._popup._update();
+	    if (this._popup) {
+		this._popup._update();
+	    }
 	},
 
 	set_pos_info: function() {
 	    var pos = this.getLatLng();
-	    var fp = fmt_pos(pos.lat, pos.lng, 4);
+	    var fp = fmt_pos(pos.lat, pos.lng, WAYPOINT_PREC);
 	    this.$content.find('#pos').html(fp.lat + '&nbsp;&nbsp;&nbsp;' + fp.lon);
 	},
 
@@ -875,8 +878,11 @@ Waypoint = L.Marker.extend({
 	    $c.find('#desc')[enabled ? 'show' : 'hide']();
 	    $c.find('#edit')[enabled ? 'hide' : 'show']();
 	    $c.find('#submit')[enabled ? 'show' : 'hide']();
-
 	    this.dragging[enabled ? 'enable' : 'disable']();
+	    this.refresh_popup();
+	    if (!enabled) {
+		this.setIconType();
+	    }
 	},
 
 	onchange: function(indrag) {
@@ -890,6 +896,45 @@ Waypoint = L.Marker.extend({
 		this.setIconType('modified');
 	    }
 	},
+
+	save: function() {
+	    var $c = this.$content;
+	    var wpt = this;
+
+	    // get data
+	    var pos = this.getLatLng();
+	    var ptrunc = function(k) {
+		return +(k.toFixed(WAYPOINT_PREC));
+	    }
+	    var payload = {
+		key: this._key,
+		name: $c.find('#name').val(),
+		desc: $c.find('#desc').val(),
+		lat: ptrunc(pos.lat),
+		lon: ptrunc(pos.lng),
+	    };
+
+	    // validate data
+	    if (!payload.name) {
+		alert('waypoint name is required');
+		return;
+	    }
+
+	    var onsuccess = function() {
+		wpt._key = payload.name;
+		$c.find('#namestatic').text($c.find('#name').val());
+		$c.find('#descstatic').text($c.find('#desc').val());
+		wpt.edit_mode(false);
+	    }
+
+	    // process data
+	    if (this.changed) {
+		$.post('/savewaypoint', JSON.stringify(payload), onsuccess);
+	    } else {
+		onsuccess();
+	    }	    
+	},
+
     });
 
 function cache_layer(lyrspec, notfound) {

@@ -285,9 +285,11 @@ def manhattan_dist((x0, y0), (x1, y1)):
 def layer_property(layer, prop, default=None):
     return (settings.LAYERS.get(layer) or {}).get(prop, default)
 
-def load_waypoints(path=settings.WAYPOINTS):
-    path = os.path.expanduser(path)
-    with open(path) as f:
+def waypoints_path(path=settings.WAYPOINTS):
+    return os.path.expanduser(path)
+
+def load_waypoints():
+    with open(waypoints_path()) as f:
         return load_waypoints_file(f)
 
 def load_waypoints_file(f):

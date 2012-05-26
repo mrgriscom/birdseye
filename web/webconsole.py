@@ -212,6 +212,44 @@ class SaveProfileHandler(web.RequestHandler):
         self.set_header('Content-Type', 'text/plain')
         self.write(path)
 
+class SaveWaypointHandler(web.RequestHandler):
+
+    def post(self):
+        def writeln(wpt):
+            fmt = '%(name)s: %(lat)s %(lon)s'
+            if wpt['desc']:
+                fmt += '  # %(desc)s' 
+            fmt += '\n'
+            return fmt % wpt
+
+        with open(u.waypoints_path()) as f:
+            lns = f.readlines()
+
+        def findln(s):
+            for i, ln in enumerate(lns):
+                if ln.startswith(s):
+                    return i
+
+        waypoint = json.loads(self.request.body)
+
+        existing_line = None
+        if waypoint['key']:
+            existing_line = findln(waypoint['key'] + ':')
+
+        entry = writeln(waypoint)
+        if existing_line is not None:
+            lns[existing_line] = entry
+        else:
+            NEW_SEC_HDR = '## ADDED VIA WEB CONSOLE'
+            header_line = findln(NEW_SEC_HDR)
+            if header_line is not None:
+                lns.insert(header_line + 1, entry)
+            else:
+                lns.extend(['\n\n%s\n' % NEW_SEC_HDR, entry])
+
+        with open(u.waypoints_path(), 'w') as f:
+            f.writelines(lns)
+
 class RootContentHandler(web.StaticFileHandler):
     def get(self):
         super(RootContentHandler, self).get('map.html')
@@ -249,6 +287,7 @@ if __name__ == "__main__":
         (r'/regions', RegionsHandler, {'dbsess': sess}),
         (r'/waypoints', WaypointsHandler),
         (r'/saveprofile', SaveProfileHandler),
+        (r'/savewaypoint', SaveWaypointHandler),
         (r'/', RootContentHandler, {'path': projpath('web/static')}),
         (r'/(.*)', web.StaticFileHandler, {'path': projpath('web/static')}),
     ])
