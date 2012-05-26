@@ -800,7 +800,6 @@ function RegionManager(map, get_active_layer) {
 
 Waypoint = L.Marker.extend({
 	options: {
-	    draggable: true,
 	    dragPopup: true,
 	},
 
@@ -820,7 +819,7 @@ Waypoint = L.Marker.extend({
 	},
 
 	onAdd: function(map) {
-	    new L.Marker().onAdd.call(this, map);
+	    L.Marker.prototype.onAdd.call(this, map);
 
 	    this.$content = $('#point-template').clone();
 	    var $c = this.$content;
@@ -873,6 +872,11 @@ Waypoint = L.Marker.extend({
 	    }
 	},
 
+	set_dragging: function(enable) {
+	    this.options.draggable = enable;
+	    this.dragging[enable ? 'enable' : 'disable']();
+	},
+
 	set_pos_info: function() {
 	    var pos = this.getLatLng();
 	    var fp = fmt_pos(pos.lat, pos.lng, WAYPOINT_PREC);
@@ -887,7 +891,7 @@ Waypoint = L.Marker.extend({
 	    $c.find('#desc')[enabled ? 'show' : 'hide']();
 	    $c.find('#edit')[enabled ? 'hide' : 'show']();
 	    $c.find('#submit')[enabled ? 'show' : 'hide']();
-	    this.dragging[enabled ? 'enable' : 'disable']();
+	    this.set_dragging(enabled);
 	    this.refresh_popup();
 	    if (!enabled) {
 		this.setIconType();
