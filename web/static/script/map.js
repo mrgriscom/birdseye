@@ -258,6 +258,8 @@ $(document).ready(function() {
             });
 	map.addControl(_r.mk_control());
 
+	map.addControl(new NewWaypoint());
+
         $.get('/layers', {default_zoom: DEFAULT_ZOOM}, function(data) {
                 var defaultLayer = null;
                 $.each(data, function(i, e) {
@@ -824,6 +826,7 @@ Waypoint = L.Marker.extend({
 	    var $c = this.$content;
 	    
 	    this._key = this.options.name;
+	    this.options.name = this.options.name || '';
 	    this.options.comment = this.options.comment || '';
 	    $c.find('#namestatic').text(this.options.name);
 	    $c.find('#name').val(this.options.name);
@@ -832,6 +835,9 @@ Waypoint = L.Marker.extend({
 	    this.set_pos_info();
 
 	    this.edit_mode(this._key == null);
+	    if (this._key == null) {
+		this.onchange();
+	    }
 
 	    var wpt = this;
 	    $c.find('#edit').click(function() {
@@ -853,6 +859,9 @@ Waypoint = L.Marker.extend({
 	    this.on('dragend', function() {
 		    wpt.onchange();
 		});
+
+	    $c.find('#name').placeholder();
+	    $c.find('#desc').placeholder();
 
 	    $c.css('display', 'block');
 	    this.bindPopup($c[0]);
@@ -907,7 +916,7 @@ Waypoint = L.Marker.extend({
 		return +(k.toFixed(WAYPOINT_PREC));
 	    }
 	    var payload = {
-		key: this._key,
+		key: this._key || '',
 		name: $c.find('#name').val(),
 		desc: $c.find('#desc').val(),
 		lat: ptrunc(pos.lat),
@@ -936,6 +945,26 @@ Waypoint = L.Marker.extend({
 	},
 
     });
+
+NewWaypoint = L.Control.extend({
+	options: {
+	    position: 'topright'
+	},
+
+	onAdd: function (map) {
+	    $('#add-wp').show();
+	    $('#add-wp').find('a').click(function() {
+		    wpt = new Waypoint(map.getCenter());
+		    map.addLayer(wpt);
+
+		    // hack or else popup is immediately closed
+		    setTimeout(function() { wpt.openPopup(); }, 200);
+		});
+	    var container = $('#add-wp')[0];
+	    return container;
+	},
+    });	
+
 
 function cache_layer(lyrspec, notfound) {
     return new L.TileLayer('/tile/' + lyrspec.id + '/{z}/{x},{y}', {

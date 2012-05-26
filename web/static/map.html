@@ -112,6 +112,14 @@ body {
   padding-top: 5px;
 }
 
+#add-wp {
+  padding: 10px;
+  border-radius: 12px;
+  -moz-border-radius: 12px;
+  -webkit-border-radius: 12px;
+  background: rgba(255, 255, 255, .8);
+}
+
 </style>
 
 <div id="map" style="height: 100%;"></div>
@@ -147,7 +155,7 @@ body {
     </tr></table>
   </div>
   <div id="select">
-    <div id="new" class="regchoice" style="background: #ccf;">add new&hellip;</div>
+    <div id="new" class="regchoice" style="background: #ccf;">add new region&hellip;</div>
     <div id="list"></div>
   </div>
 </div>
@@ -167,6 +175,10 @@ body {
     <a href="#" id="edit">edit</a>
     <button id="submit">Save</button>
   </div>
+</div>
+
+<div id="add-wp" style="display: none;">
+<a href="#">add new waypoint</a>
 </div>
 
 </body>
