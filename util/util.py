@@ -5,6 +5,8 @@ import operator
 import itertools
 import random
 import settings
+import logging
+import os.path
 
 EPSILON = 1.0e-9
 
@@ -282,3 +284,60 @@ def manhattan_dist((x0, y0), (x1, y1)):
 
 def layer_property(layer, prop, default=None):
     return (settings.LAYERS.get(layer) or {}).get(prop, default)
+
+def load_waypoints(path=settings.WAYPOINTS):
+    path = os.path.expanduser(path)
+    with open(path) as f:
+        return load_waypoints_file(f)
+
+def load_waypoints_file(f):
+    def gen_waypoints():
+        for ln in f:
+            try:
+                wpt = parse_waypoint_line(ln.strip())
+                if wpt:
+                    yield wpt
+            except RuntimeError:
+                logging.warn('could not parse waypoint line [%s]' % ln.strip())
+    waypoints = list(gen_waypoints())
+
+    dups = [k for k, v in map_reduce(waypoints, lambda w: [(w['name'],)], len).iteritems() if v > 1]
+    if dups:
+        logging.warn('waypoints [%s] are defined more than once' % ', '.join(sorted(dups)))
+
+    return dict((wpt['name'], wpt) for wpt in waypoints)
+
+def parse_waypoint_line(ln):
+    def split(s, k):
+        return s[:k].strip(), s[k+1:].strip()
+
+    comment = None
+    k = ln.find('#')
+    if k >= 0:
+        ln, comment = split(ln, k)
+    if not ln:
+        # empty lines and comment-only lines
+        return
+
+    k = ln.find(':')
+    if k == -1:
+        raise RuntimeError()
+    name, ln = split(ln, k)
+    ll = parse_ll(ln)
+    if not ll:
+        raise RuntimeError()
+
+    return {'name': name, 'pos': ll, 'comment': comment}
+
+def parse_ll(raw):
+    pcs = raw.split(',' if ',' in raw else None)
+    try:
+        lat = float(pcs[0].strip())
+        lon = float(pcs[1].strip())
+    except (IndexError, ValueError):
+        return None
+
+    if lat < -90. or lat > 90. or lon < -180. or lon > 180.:
+        return None
+
+    return (lat, lon)

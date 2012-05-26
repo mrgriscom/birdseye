@@ -21,6 +21,7 @@ import tempfile
 
 from mapcache import maptile as mt
 from mapcache import mapdownload as md
+import util.util as u
 
 from sqlalchemy import func
 
@@ -194,6 +195,13 @@ class RegionsHandler(web.RequestHandler):
         self.set_header('Content-Type', 'text/json')
         self.write(json.dumps(payload))
 
+class WaypointsHandler(web.RequestHandler):
+
+    def get(self):
+        payload = u.load_waypoints()
+        self.set_header('Content-Type', 'text/json')
+        self.write(json.dumps(payload))
+
 class SaveProfileHandler(web.RequestHandler):
     
     def post(self):
@@ -239,6 +247,7 @@ if __name__ == "__main__":
         (r'/tileurl/([A-Za-z0-9_-]+)/([0-9]+)/([0-9]+),([0-9]+)', TileURLHandler),
         (r'/tilecover/([A-Za-z0-9_-]+)/([0-9]+)/([0-9]+),([0-9]+)', TileCoverHandler, {'dbsess': sess}),
         (r'/regions', RegionsHandler, {'dbsess': sess}),
+        (r'/waypoints', WaypointsHandler),
         (r'/saveprofile', SaveProfileHandler),
         (r'/', RootContentHandler, {'path': projpath('web/static')}),
         (r'/(.*)', web.StaticFileHandler, {'path': projpath('web/static')}),

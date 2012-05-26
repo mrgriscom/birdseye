@@ -11,7 +11,7 @@ TILE_DB = 'postgresql:///tiles'
 TILE_STORE_BLOB = False
 
 # root directory where tiles are stored
-TILE_ROOT = '/home/drew/tiles/'
+TILE_ROOT = '/var/lib/birdseye/tiles/'
 # how to clump tiles into directory buckets (shouldn't have too many
 # entries in any one directory)
 # [2, 4]: 53392f0a.jpg => 53/5339/53392f0a.jpg
@@ -90,7 +90,7 @@ TILE_DL_UA = 'Mozilla/5.0 (X11; U; Linux i686; en-US) Gecko/20080208 Firefox/2.0
 # measurement units
 UNITS = 'us' # 'us' or 'metric'
 
-WAYPOINTS = 'data/waypoints'
+WAYPOINTS = '~/.birdseye/waypoints'
 
 
 

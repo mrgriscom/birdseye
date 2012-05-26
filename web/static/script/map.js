@@ -231,11 +231,12 @@ function tile_url(spec, zoom, point) {
 var DEFAULT_ZOOM = 2;
 var MAX_ZOOM = 20;
 var DL_COMMAND = 'python mapcache.py';
+var ICON_PATH = '/img/leaflet';
 
 $(document).ready(function() {
         monkey_patch();
 
-        L.Icon.Default.imagePath = '/img/leaflet';
+        L.Icon.Default.imagePath = ICON_PATH;
         var map = new L.Map('map', {
                 maxZoom: MAX_ZOOM,
                 worldCopyJump: false,
@@ -275,6 +276,13 @@ $(document).ready(function() {
                         _r.add_region(reg);
                     });
             });
+
+	$.get('/waypoints', function(data) {
+		$.each(data, function(i, pt) {
+			var wpt = new Waypoint(new L.LatLng(pt.pos[0], pt.pos[1]), pt);
+			map.addLayer(wpt);
+		    });
+	    });
     });
 
 var IMG_ALPHABG = '/img/alphabg.png';
@@ -297,6 +305,21 @@ function monkey_patch() {
         $.each(lyrs, function(i, lyr) {
                 $(m._tilePane).append(lyr._container);
             });
+    }
+
+    L.Handler.MarkerDrag.prototype._onDragStart = function(e) {
+	if (!this._marker.options.dragPopup) {
+	    this._marker.closePopup();
+	}
+	this._marker.fire('movestart').fire('dragstart');
+    }
+
+    var _ondrag = L.Handler.MarkerDrag.prototype._onDrag;
+    L.Handler.MarkerDrag.prototype._onDrag = function(e) {
+	_ondrag.call(this, e);
+	if (this._marker._popup && this._marker.options.dragPopup) {
+	    this._marker._popup.setLatLng(this._marker.getLatLng());
+	}
     }
 }
 
@@ -335,26 +358,14 @@ function ActiveLoc(map) {
 	var $info = $('#info');
 	var info = pos_info(ll, map);
 
-	var npad = function(n, pad) {
-	    var s = '' + n;
-	    while (s.length < pad) {
-		s = '0' + s;
-	    }
-	    return s;
-	}
-
-	var fmt_ll = function(k, dir, pad) {
-	    var PREC = 5;
-	    return dir[k >= 0 ? 0 : 1] + npad(Math.abs(k).toFixed(PREC), PREC + 1 + pad) + '\xb0';
-	};
-    
 	var max_t = Math.pow(2, info.zoom) - 1;
 	var fmt_t = function(t, z) {
 	    return npad(t, ('' + max_t).length);
 	}
 
-	$info.find('#lat').text(fmt_ll(info.lat, 'NS', 2));
-	$info.find('#lon').text(fmt_ll(info.lon, 'EW', 3));
+	var fp = fmt_pos(info.lat, info.lon, 5);
+	$info.find('#lat').text(fp.lat);
+	$info.find('#lon').text(fp.lon);
 	$info.find('#zoom').text(info.zoom);
 	$info.find('#effzoom').text(info.effzoom);
 	$info.find('#zeff')[info.effzoom_offset == 0 ? 'hide' : 'show']();    
@@ -784,6 +795,103 @@ function RegionManager(map, get_active_layer) {
     }
 }   
 
+Waypoint = L.Marker.extend({
+	options: {
+	    draggable: true,
+	    dragPopup: true,
+	},
+
+	setIconType: function(type) {
+	    var mk_icon = function(type) {
+		return new L.Icon({
+			iconUrl: ICON_PATH + '/marker-icon-' + type + '.png',
+			shadowUrl: ICON_PATH + '/marker-shadow.png',
+			iconSize: new L.Point(25, 41),
+			iconAnchor: new L.Point(13, 41),
+			popupAnchor: new L.Point(0, -33),
+			shadowSize: new L.Point(41, 41)
+		    });
+	    };
+	    var icon = (type != null ? mk_icon(type) : new L.Icon.Default());
+	    this.setIcon(icon);
+	},
+
+	onAdd: function(map) {
+	    new L.Marker().onAdd.call(this, map);
+
+	    this.$content = $('#point-template').clone();
+	    var $c = this.$content;
+	    
+	    this._key = this.options.name;
+	    this.options.comment = this.options.comment || '';
+	    $c.find('#namestatic').text(this.options.name);
+	    $c.find('#name').val(this.options.name);
+	    $c.find('#descstatic').text(this.options.comment);
+	    $c.find('#desc').val(this.options.comment);
+	    this.set_pos_info();
+
+	    this.edit_mode(this._key == null);
+
+	    var wpt = this;
+	    $c.find('#edit').click(function() {
+		    wpt.edit_mode(true);
+		    wpt.refresh_popup();
+		});
+	    $c.find('#submit').click(function() {
+		});
+	    $c.find('#name').change(function() {
+		    wpt.onchange();
+		});
+	    $c.find('#desc').change(function() {
+		    wpt.onchange();
+		});
+	    this.on('drag', function() {
+		    wpt.onchange(true);
+		    wpt.set_pos_info();
+		});
+	    this.on('dragend', function() {
+		    wpt.onchange();
+		});
+
+	    $c.css('display', 'block');
+	    this.bindPopup($c[0]);
+	},
+
+	refresh_popup: function() {
+	    this._popup._update();
+	},
+
+	set_pos_info: function() {
+	    var pos = this.getLatLng();
+	    var fp = fmt_pos(pos.lat, pos.lng, 4);
+	    this.$content.find('#pos').html(fp.lat + '&nbsp;&nbsp;&nbsp;' + fp.lon);
+	},
+
+	edit_mode: function(enabled) {
+	    var $c = this.$content;
+	    $c.find('#namestatic')[enabled ? 'hide' : 'show']();
+	    $c.find('#descstatic')[enabled ? 'hide' : 'show']();
+	    $c.find('#name')[enabled ? 'show' : 'hide']();
+	    $c.find('#desc')[enabled ? 'show' : 'hide']();
+	    $c.find('#edit')[enabled ? 'hide' : 'show']();
+	    $c.find('#submit')[enabled ? 'show' : 'hide']();
+
+	    this.dragging[enabled ? 'enable' : 'disable']();
+	},
+
+	onchange: function(indrag) {
+	    if (!this.changed) {
+		if (indrag) {
+		    // changing the icon during drag causes drag to stop
+		    return;
+		}
+
+		this.changed = true;
+		this.setIconType('modified');
+	    }
+	},
+    });
+
 function cache_layer(lyrspec, notfound) {
     return new L.TileLayer('/tile/' + lyrspec.id + '/{z}/{x},{y}', {
             errorTileUrl: notfound ? IMG_NOCACHE : null
@@ -904,6 +1012,25 @@ function anglenorm(a, offset) {
         offset = 180.;
     }
     return mod(a + offset, 360.) - offset;
+}
+
+function npad(n, pad) {
+    var s = '' + n;
+    while (s.length < pad) {
+	s = '0' + s;
+    }
+    return s;
+}
+
+function fmt_ll(k, dir, pad, prec) {
+    return dir[k >= 0 ? 0 : 1] + npad(Math.abs(k).toFixed(prec), prec + 1 + pad) + '\xb0';
+};
+
+function fmt_pos(lat, lon, prec) {
+    return {
+	lat: fmt_ll(lat, 'NS', 2, prec),
+        lon: fmt_ll(lon, 'EW', 3, prec)
+    };
 }
 
 function url_param(param, value) {

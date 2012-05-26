@@ -1,38 +1,15 @@
-deloreto: 0.0 0.0
-fudd1: 40.484168 -74.417267
-fudd2: 40.913886 -74.04798
-absecon: 39.4244 -74.5018
-actrain: 39.3627 -74.4381
 
-
-durban:  -29.85 31
-mtuzini: -28.96 31.76
-maputo: -25.97 32.58
-lomahasha: -25.99 32.00
-manzini: -26.50 31.38
-
-mansa: -11.13 28.85
-
-phalaborwa: -23.94573 31.16540
-letaba: -23.852963 31.57495
-covane: -24.42525 32.84505
-ltfp: -23.86818 32.14736
-giriyondo: -23.58383 31.6603
-campismo: -23.85717 32.00714
-pomene: 0.0 0.0
-covanemaybe: -23.92169 32.16092
-
-#residences
+## HOMES
 home: 0.0 0.0
 mom: 0.0 0.0
 dad: 0.0 0.0
 dad-ma: 0.0 0.0
-pa-kew: 0.0 0.0
-cottage: 0.0 0.0
-catskabin: 0.0 0.0
-griscom: 0.0 0.0
+pa-kew: 0.0 0.0     # abbie's dad's house
+cottage: 0.0 0.0    # abbie's cottage in cape cod
+catskabin: 0.0 0.0  # matt perkins' house in catskills
+griscom: 0.0 0.0    # the griscom house, cape may
 
-#airports
+## AIRPORTS
 bos: 42.363 -71.009
 jfk: 40.642 -73.788
 dxb: 25.252 55.370
@@ -49,25 +26,46 @@ cpt: -33.972 18.603
 jnb: -26.135 28.236
 atl: 33.641 -84.434
 
-#misc
-climb: 42.2958 -71.7981
+## MISC
+climb: 42.2958 -71.7981 # central rock, worcester
+deloreto: 0.0 0.0
+fudd1: 40.484168 -74.417267
+fudd2: 40.913886 -74.04798
+absecon: 39.4244 -74.5018
+actrain: 39.3627 -74.4381
 
-#dar
+## TANZANIA
 kunduchi: -6.6667 39.2194
 dtree: 0.0 0.0
 dtree-old: 0.0 0.0
 ubungo: -6.791 39.211
-
-
 dodoma: -6.182 35.752
+
+## ZAMBIA
 vicfalls: -17.923 25.855
 jules: -15.3829 28.3196
 ndola: -12.968 28.632
 castle: -12.9534 28.6491
+mansa: -11.13 28.85
 
-#canada roadtrip
-globe: 43.808 -70.164
-quoddy: 44.815 -66.952
+## MOZ ROADTRIP
+phalaborwa: -23.94573 31.16540
+letaba: -23.852963 31.57495
+covane: -24.42525 32.84505
+ltfp: -23.86818 32.14736
+giriyondo: -23.58383 31.6603
+campismo: -23.85717 32.00714
+pomene: 0.0 0.0
+covanemaybe: -23.92169 32.16092
+durban:  -29.85 31
+mtuzini: -28.96 31.76
+maputo: -25.97 32.58
+lomahasha: -25.99 32.00
+manzini: -26.50 31.38
+
+## CANADA ROADTRIP
+giantglobe: 43.808 -70.164
+quoddyhead: 44.815 -66.952
 lubec: 44.859 -66.984
 st-john: 45.272 -66.057
 parrsboro: 45.395 -64.328
