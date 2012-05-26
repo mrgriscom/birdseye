@@ -267,7 +267,7 @@ class LocationSearchHandler(web.RequestHandler):
                 raise RuntimeError('no response or invalid response received')
             payload = {
                 'status': 'success',
-                'results': self.process_response(etree.parse(resp.buffer)),
+                'results': self.process_response(etree.fromstring(resp.body)) if resp.body else [],
             }
         except Exception, e:
             logging.exception('places query')
@@ -283,10 +283,14 @@ class LocationSearchHandler(web.RequestHandler):
             return '{%s}%s' % (KML_NS, tag)
 
         def make_marker(placemark):
+            posnode = placemark.find('%s/%s' % (_('Point'), _('coordinates')))
+            if posnode is None:
+                return None
+
+            pos = posnode.text
             name = placemark.find(_('name')).text
             descnode = placemark.find(_('Snippet'))
             desc = descnode.text if descnode is not None else None
-            pos = placemark.find('%s/%s' % (_('Point'), _('coordinates'))).text
             rangenode = placemark.find('%s/%s' % (_('LookAt'), _('range')))
             radius = .433 * float(rangenode.text) if rangenode is not None else None # scale factor is tan(hfov/2) * (h/w)^.5, where hfov=60*, w:h=16:9
 
@@ -298,7 +302,7 @@ class LocationSearchHandler(web.RequestHandler):
                 'radius': radius,
             }
 
-        return [make_marker(pm) for pm in kml.findall('.//%s' % _('Placemark'))]
+        return filter(lambda e: e, [make_marker(pm) for pm in kml.findall('.//%s' % _('Placemark'))])
 
 class RootContentHandler(web.StaticFileHandler):
     def get(self):

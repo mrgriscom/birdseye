@@ -1008,7 +1008,11 @@ NewWaypoint = L.Control.extend({
 				    $searchbutton.removeAttr('disabled');
 
 				    if (data.status == 'success') {
-					show_search_results(data.results, map);
+					if (data.results.length == 0) {
+					    alert('0 matches');
+					} else {
+					    show_search_results(data.results, map);
+					}
 				    } else {
 					alert('search failed: ' + data.message);
 				    }
