@@ -931,33 +931,36 @@ Waypoint = L.Marker.extend({
     });
 
 SearchResult = L.Marker.extend({
+	options: {
+	    zIndexOffset: 100,
+	},
+
+	setIconType: function() {
+	    this.setIcon(get_icon(this.options.primary ? 'searchresult-primary' : 'searchresult'));
+	},
+
 	onAdd: function(map) {
 	    L.Marker.prototype.onAdd.call(this, map);
 
-	    this.setIcon(get_icon('searchresult'));
-
-	    /*
-	    this.$content = $('#point-template').clone();
-	    var $c = this.$content;
-	    
-	    this._key = this.options.name;
-	    this.options.name = this.options.name || '';
-	    this.options.comment = this.options.comment || '';
-	    $c.find('#namestatic').text(this.options.name);
-	    $c.find('#name').val(this.options.name);
-	    $c.find('#descstatic').text(this.options.comment);
-	    $c.find('#desc').val(this.options.comment);
-	    this.set_pos_info();
-
-	    this.edit_mode(this._key == null);
-	    if (this._key == null) {
-		this.onchange();
+	    this.setIconType();
+	    if (this.options.primary) {
+		this.setZIndexOffset(this.options.zIndexOffset + 100);
 	    }
 
-	    var wpt = this;
-	    $c.find('#edit').click(function() {
-		    wpt.edit_mode(true);
-	    */
+	    this.$content = $('<div />');
+	    var $name = $('<div />');
+	    $name.attr('id', 'namestatic');
+	    $name.text(this.options.name);
+	    this.$content.append($name);
+
+	    var $desc = $('<div />');
+	    $desc.html(this.options.desc || '');
+	    this.$content.append($desc);
+
+	    this.bindPopup(this.$content[0]);
+	    if (this.options.primary) {
+		this.openPopup();
+	    }
 	},
 
 	bounds: function() {
@@ -997,7 +1000,7 @@ NewWaypoint = L.Control.extend({
 		    $searchbutton.click(function() {
 			    var query = $.trim($div.find('#searchquery').val());
 			    if (!query) {
-				return;
+				return false;
 			    }
 			    
 			    $searchbutton.attr('disabled', 'true');
@@ -1011,20 +1014,25 @@ NewWaypoint = L.Control.extend({
 				    }
 				});
 			    
+			    return false;
 			});
+		    setTimeout(function() {
+			    $div.find('#searchquery').focus();
+			}, 100);
 		});
 	},
     });	
 
 function show_search_results(results, map) {					
     var bounds = new L.LatLngBounds();
-
     $.each(results, function(i, e) {
+	    if (i == 0) {
+		e.primary = true;
+	    }
 	    var m = new SearchResult(new L.LatLng(e.lat, e.lon), e);
 	    bounds.extend(m.bounds());
 	    map.addLayer(m);
 	});
-
     map.fitBounds(bounds);
 }
 

@@ -270,6 +270,7 @@ class LocationSearchHandler(web.RequestHandler):
                 'results': self.process_response(etree.parse(resp.buffer)),
             }
         except Exception, e:
+            logging.exception('places query')
             payload = {'status': 'error', 'message': str(e)}
 
         self.set_header('Content-Type', 'text/json')
