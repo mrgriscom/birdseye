@@ -99,7 +99,7 @@ body {
   font-size: 120%;
 }
 
-#regions a {
+.discreetlinks a {
   color: blue;
   font-size: 70%;
   padding-left: 15px;
@@ -140,7 +140,7 @@ body {
 </div>
 
 <div id="regions" style="display: none;">
-  <div id="manage" style="display: none;">
+  <div id="manage" class="discreetlinks" style="display: none;">
     <div><span id="namestatic"></span><input id="name" placeholder="region name"></input></div>
     <div><a href="#" id="clone">clone</a><a href="#" id="edit">edit</a></div>
     <div id="edithint" class="hint" style="display: none;">bksp / shift+bksp to delete points</div>
@@ -175,6 +175,12 @@ body {
     <a href="#" id="edit">edit</a>
     <button id="submit">Save</button>
   </div>
+</div>
+
+<div id="searchresult-template" style="display: none;">
+  <div id="namestatic"></div>
+  <div id="desc"></div>
+  <div><a href="#" id="use">use this</a></div>
 </div>
 
 <div id="wp-panel" class="panel" style="display: none; text-align: right;">

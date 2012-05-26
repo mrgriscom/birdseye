@@ -947,20 +947,24 @@ SearchResult = L.Marker.extend({
 		this.setZIndexOffset(this.options.zIndexOffset + 100);
 	    }
 
-	    this.$content = $('<div />');
-	    var $name = $('<div />');
-	    $name.attr('id', 'namestatic');
-	    $name.text(this.options.name);
-	    this.$content.append($name);
+	    this.$content = $('#searchresult-template').clone();
+	    this.$content.find('#namestatic').text(this.options.name);
+	    this.$content.find('#desc').html(this.options.desc || '');
+	    var sr = this;
+	    this.$content.find('#use').click(function() {
+		    sr.activate();
+		});
 
-	    var $desc = $('<div />');
-	    $desc.html(this.options.desc || '');
-	    this.$content.append($desc);
-
+	    this.$content.show();
 	    this.bindPopup(this.$content[0]);
 	    if (this.options.primary) {
 		this.openPopup();
 	    }
+	},
+
+	activate: function() {
+	    new_waypoint(this._map, this.getLatLng());
+	    this._map.removeLayer(this);
 	},
 
 	bounds: function() {
@@ -981,6 +985,15 @@ SearchResult = L.Marker.extend({
 
     });
 
+function new_waypoint(map, pos) {
+    pos = pos || map.getCenter();
+    var wpt = new Waypoint(pos);
+    map.addLayer(wpt);
+   
+    // hack or else popup is immediately closed
+    setTimeout(function() { wpt.openPopup(); }, 200);
+}
+
 NewWaypoint = L.Control.extend({
 	options: {
 	    position: 'topright'
@@ -990,11 +1003,7 @@ NewWaypoint = L.Control.extend({
 	    return ctrl_init('#wp-panel', function($div, div) {
 		    L.DomEvent.disableClickPropagation(div);	    
 		    $div.find('#newwpt').click(function() {
-			    wpt = new Waypoint(map.getCenter());
-			    map.addLayer(wpt);
-
-			    // hack or else popup is immediately closed
-			    setTimeout(function() { wpt.openPopup(); }, 200);
+			    new_waypoint(map);
 			});
 		    var $searchbutton = $div.find('#search');
 		    $searchbutton.click(function() {
