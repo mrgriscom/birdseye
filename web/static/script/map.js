@@ -1005,6 +1005,10 @@ NewWaypoint = L.Control.extend({
 		    $div.find('#newwpt').click(function() {
 			    new_waypoint(map);
 			});
+
+		    var resultsGroup = new L.LayerGroup();
+		    map.addLayer(resultsGroup);
+
 		    var $searchbutton = $div.find('#search');
 		    $searchbutton.click(function() {
 			    var query = $.trim($div.find('#searchquery').val());
@@ -1020,7 +1024,7 @@ NewWaypoint = L.Control.extend({
 					if (data.results.length == 0) {
 					    alert('0 matches');
 					} else {
-					    show_search_results(data.results, map);
+					    show_search_results(data.results, map, resultsGroup);
 					}
 				    } else {
 					alert('search failed: ' + data.message);
@@ -1029,6 +1033,11 @@ NewWaypoint = L.Control.extend({
 			    
 			    return false;
 			});
+
+		    $div.find('#clearresults').click(function() {
+			    resultsGroup.clearLayers();
+			});
+
 		    setTimeout(function() {
 			    $div.find('#searchquery').focus();
 			}, 100);
@@ -1036,7 +1045,8 @@ NewWaypoint = L.Control.extend({
 	},
     });	
 
-function show_search_results(results, map) {					
+function show_search_results(results, map, grp) {
+    grp.clearLayers();
     var bounds = new L.LatLngBounds();
     $.each(results, function(i, e) {
 	    if (i == 0) {
@@ -1044,7 +1054,7 @@ function show_search_results(results, map) {
 	    }
 	    var m = new SearchResult(new L.LatLng(e.lat, e.lon), e);
 	    bounds.extend(m.bounds());
-	    map.addLayer(m);
+	    grp.addLayer(m);
 	});
     map.fitBounds(bounds);
 }
