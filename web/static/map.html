@@ -112,7 +112,7 @@ body {
   padding-top: 5px;
 }
 
-#add-wp {
+.panel {
   padding: 10px;
   border-radius: 12px;
   -moz-border-radius: 12px;
@@ -177,8 +177,13 @@ body {
   </div>
 </div>
 
-<div id="add-wp" style="display: none;">
+<div id="add-wp" class="panel" style="display: none;">
 <a href="#">add new waypoint</a>
+</div>
+
+<div id="management-opts" class="panel" style="display: none;">
+  <div><a id="region" href="#">manage regions</a></div>
+  <div><a id="waypoint" href="#">manage waypoints</a></div>
 </div>
 
 <script>

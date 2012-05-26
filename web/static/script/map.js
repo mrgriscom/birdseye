@@ -26,10 +26,29 @@ function init_console() {
 
     var _r = new RegionManager(map, function() {
 	    return layersControl.active_layer;
-	});
-    map.addControl(_r.mk_control());
+        });
 
-    map.addControl(new NewWaypoint());
+    map.addControl(new ManagementOptions({
+		enable_regions: function() {
+		    map.addControl(_r.mk_control());
+		 
+		    $.get('/regions', function(data) {
+			    $.each(data, function(i, reg) {
+				    _r.add_region(reg);
+				});
+			});
+		},
+		enable_waypoints: function() {
+		    map.addControl(new NewWaypoint());
+    
+		    $.get('/waypoints', function(data) {
+			    $.each(data, function(i, pt) {
+				    var wpt = new Waypoint(new L.LatLng(pt.pos[0], pt.pos[1]), pt);
+				    map.addLayer(wpt);
+				});
+			});
+		},
+	    }));
 
     $.get('/layers', {default_zoom: DEFAULT_ZOOM}, function(data) {
 	    var defaultLayer = null;
@@ -44,19 +63,6 @@ function init_console() {
 	    layersControl.select('source');
 	    //layersControl.select('cached');
 	}, 'json');
-
-    $.get('/regions', function(data) {
-	    $.each(data, function(i, reg) {
-		    _r.add_region(reg);
-		});
-	});
-
-    $.get('/waypoints', function(data) {
-	    $.each(data, function(i, pt) {
-		    var wpt = new Waypoint(new L.LatLng(pt.pos[0], pt.pos[1]), pt);
-		    map.addLayer(wpt);
-		});
-	});
 }
 
 function tile_url(spec, zoom, point) {
@@ -203,10 +209,8 @@ function ActiveLoc(map) {
 		    position: 'bottomleft'
 		},
 
-		onAdd: function (map) {
-		    $('#info').show();
-		    var container = $('#info')[0];
-		    return container;
+		onAdd: function(map) {
+		    return ctrl_init('#info');
 		},
 	    });	
 	this.init();
@@ -606,11 +610,10 @@ function RegionManager(map, get_active_layer) {
 		},
 
 		onAdd: function (map) {
-		    $('#regions').show();
-		    var container = $('#regions')[0];
-		    L.DomEvent.disableClickPropagation(container);
-		    L.DomEvent.addListener(container, 'mousewheel', L.DomEvent.stopPropagation);
-		    return container;
+		    return ctrl_init('#regions', function($div, div) {
+			    L.DomEvent.disableClickPropagation(div);
+			    L.DomEvent.addListener(div, 'mousewheel', L.DomEvent.stopPropagation);
+			});
 		},
 	    });	
 	this.init();
@@ -932,19 +935,52 @@ NewWaypoint = L.Control.extend({
 	},
 
 	onAdd: function (map) {
-	    $('#add-wp').show();
-	    $('#add-wp').find('a').click(function() {
-		    wpt = new Waypoint(map.getCenter());
-		    map.addLayer(wpt);
+	    return ctrl_init('#add-wp', function($div, div) {
+		    $div.find('a').click(function() {
+			    wpt = new Waypoint(map.getCenter());
+			    map.addLayer(wpt);
 
-		    // hack or else popup is immediately closed
-		    setTimeout(function() { wpt.openPopup(); }, 200);
+			    // hack or else popup is immediately closed
+			    setTimeout(function() { wpt.openPopup(); }, 200);
+			});
 		});
-	    var container = $('#add-wp')[0];
-	    return container;
 	},
     });	
 
+ManagementOptions = L.Control.extend({
+	options: {
+	    position: 'topright'
+	},
+
+	onAdd: function (map) {
+	    var mo = this;
+
+	    var bind = function($e, init) {
+		$e.click(function() {
+			$e.hide();
+			init();
+
+			if ($(mo._container).find('a:visible').length == 0) {
+			    map.removeControl(mo);
+			}
+		    });
+	    }
+
+	    return ctrl_init('#management-opts', function($div, div) {
+		    bind($div.find('#region'), mo.options.enable_regions);
+		    bind($div.find('#waypoint'), mo.options.enable_waypoints);
+		});
+	},
+    });
+
+function ctrl_init(sel, custom_init) {
+    var $div = $(sel);
+    $div.show();
+    if (custom_init) {
+	custom_init($div, $div[0]);
+    }
+    return $div[0];
+}
 
 function cache_layer(lyrspec, notfound) {
     return new L.TileLayer('/tile/' + lyrspec.id + '/{z}/{x},{y}', {
