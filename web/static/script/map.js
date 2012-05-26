@@ -934,6 +934,7 @@ Waypoint = L.Marker.extend({
 	    }
 
 	    var onsuccess = function() {
+		wpt.changed = false;
 		wpt._key = payload.name;
 		$c.find('#namestatic').text($c.find('#name').val());
 		$c.find('#descstatic').text($c.find('#desc').val());
