@@ -1117,13 +1117,20 @@ function source_layer(lyrspec, proxy, notfound) {
 function coverage_layer(lyrspec) {
     var canvas_layer = new L.TileLayer.Canvas();
     canvas_layer.drawTile = function(canvas, tile, zoom) {
-        $.get('/tilecover/' + lyrspec.id + '/' + zoom + '/' + tile.x + ',' + tile.y, function(data) {
+        $.get('/tilecover/' + lyrspec.id + '/' + zoom + '/' + tile.x + ',' + tile.y, {lookback: 0}, function(data) {
                 var ctx = canvas.getContext('2d');
-                ctx.fillStyle = 'rgba(255, 0, 0, 0.1)';
                 
                 $.each(data, function(i, t) {
-                        var w = 256 * Math.pow(0.5, t.z);
-                        ctx.fillRect(w * t.x, w * t.y, w, w);  
+			if (t.z > 0) {
+			    var w = 256 * Math.pow(0.5, t.z);
+			    ctx.fillStyle = 'rgba(255, 0, 0, 0.1)';
+			    ctx.fillRect(w * t.x, w * t.y, w, w);
+			} else if (t.z < 0) {
+			    ctx.fillStyle = 'rgba(0, 0, 255, 0.05)';
+			    for (var i = 0; i < -t.z; i++) {
+				ctx.fillRect(0, 0, 256, 256);
+			    }
+			}
                     });
             }, 'json');
     }

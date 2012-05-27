@@ -299,17 +299,16 @@ class Region(Base):
 def ll_to_xy(coords):
     return [mercator_to_xy(ll_to_mercator(c)) for c in coords]
 
-class RegionOverlay(Base):
-    """record which regions have been downloaded -- layer and depth"""
-
-    __tablename__ = 'region_overlays'
-
-    region = Column(Integer, ForeignKey('regions.id'), primary_key=True) # todo: cascade?
-    layer = Column(String, primary_key=True)
-    depth = Column(Integer, nullable=False)
-
-    created_on = Column(DateTime, default=func.now())
-
+#class RegionOverlay(Base):
+#    """record which regions have been downloaded -- layer and depth"""
+#
+#    __tablename__ = 'region_overlays'
+#
+#    region = Column(Integer, ForeignKey('regions.id'), primary_key=True) # todo: cascade?
+#    layer = Column(String, primary_key=True)
+#    depth = Column(Integer, nullable=False)
+#
+#    created_on = Column(DateTime, default=func.now())
 
 def dbsess(connector=settings.TILE_DB, echo=False):
     """create a connector to the tile database"""

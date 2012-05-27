@@ -82,6 +82,8 @@ class LayersHandler(web.RequestHandler):
 
 class TileRequestHandler(web.RequestHandler):
 
+    PATTERN = '([A-Za-z0-9_-]+)/([0-9]+)/([0-9]+),([0-9]+)'
+
     def get(self, layer, z, x, y):
         self._get(mt.Tile(layer=layer, z=int(z), x=int(x), y=int(y)))
 
@@ -171,11 +173,24 @@ class TileCoverHandler(TileRequestHandler):
         self.sess = dbsess
 
     def _get(self, tile):
-        desc = tile.get_descendants(self.sess, 8)
-        def rel_tile(t):
-            zdiff = t.z - tile.z
-            return {'z': zdiff, 'x': t.x - tile.x * 2**zdiff, 'y': t.y - tile.y * 2**zdiff}
-        payload = [rel_tile(t) for t in desc]
+        lookback = int(self.get_argument('lookback', settings.LOOKBACK))
+
+        desc = list(tile.get_descendants(self.sess, 8))
+        if desc:
+            # tile has descendants
+            def rel_tile(t):
+                zdiff = t.z - tile.z
+                return {'z': zdiff, 'x': t.x - tile.x * 2**zdiff, 'y': t.y - tile.y * 2**zdiff}
+            payload = [rel_tile(t) for t in desc]
+        else:
+            # search current and ancestor levels
+            ancestor_ix = [tile.qt[:-i if i > 0 else None] for i in range(lookback + 1) if i <= len(tile.qt)]
+            ancestors = sess.query(mt.Tile).filter_by(layer=tile.layer).filter(mt.Tile.qt.in_(ancestor_ix))
+            found = sorted(t.qt for t in ancestors)
+            if found:
+                payload = [{'z': len(found[-1]) - tile.z}]
+            else:
+                payload = []
 
         self.set_header('Content-Type', 'text/json')
         self.write(json.dumps(payload))
@@ -334,10 +349,10 @@ if __name__ == "__main__":
 
     application = web.Application([
         (r'/layers', LayersHandler, {'dbsess': sess, 'custom': options.urls or []}),
-        (r'/tile/([A-Za-z0-9_-]+)/([0-9]+)/([0-9]+),([0-9]+)', TileHandler, {'dbsess': sess}),
-        (r'/tileproxy/([A-Za-z0-9_-]+)/([0-9]+)/([0-9]+),([0-9]+)', TileProxyHandler, {'tiledl': tiledl}),
-        (r'/tileurl/([A-Za-z0-9_-]+)/([0-9]+)/([0-9]+),([0-9]+)', TileURLHandler),
-        (r'/tilecover/([A-Za-z0-9_-]+)/([0-9]+)/([0-9]+),([0-9]+)', TileCoverHandler, {'dbsess': sess}),
+        (r'/tile/' + TileRequestHandler.PATTERN, TileHandler, {'dbsess': sess}),
+        (r'/tileproxy/' + TileRequestHandler.PATTERN, TileProxyHandler, {'tiledl': tiledl}),
+        (r'/tileurl/' + TileRequestHandler.PATTERN, TileURLHandler),
+        (r'/tilecover/' + TileRequestHandler.PATTERN, TileCoverHandler, {'dbsess': sess}),
         (r'/regions', RegionsHandler, {'dbsess': sess}),
         (r'/waypoints', WaypointsHandler),
         (r'/saveprofile', SaveProfileHandler),

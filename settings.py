@@ -90,9 +90,11 @@ TILE_DL_UA = 'Mozilla/5.0 (X11; U; Linux i686; en-US) Gecko/20080208 Firefox/2.0
 # measurement units
 UNITS = 'us' # 'us' or 'metric'
 
+# path to file containing stored waypoints
 WAYPOINTS = '~/.birdseye/waypoints'
 
-
+# if no tile exists for current zoom level, use a tile from this many levels up
+LOOKBACK = 2
 
 
 
