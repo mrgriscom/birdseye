@@ -9,6 +9,7 @@ from glob import glob
 from StringIO import StringIO
 from contextlib import closing
 import Image
+import collections
 import mapdownload # argh circular import
 
 from sqlalchemy import create_engine, Column, DateTime, Integer, String, LargeBinary, ForeignKey, CheckConstraint, Index
@@ -93,6 +94,15 @@ class Tile(Base):
         if max_depth:
             q = q.filter(Tile.z <= self.z + max_depth)
         return q
+
+    def get_ancestors(self, sess, lookback):
+        def qt_ancestor(k):
+            return self.qt[:-k or None]
+
+        ancestor_ix = [qt_ancestor(i) for i in range(lookback + 1) if i <= self.z]
+        q = sess.query(Tile).filter_by(layer=self.layer).filter(Tile.qt.in_(ancestor_ix))
+        ancestors = collections.defaultdict(lambda: None, ((t.z, t) for t in q))
+        return [ancestors[self.z - i] for i in range(lookback + 1)]
 
     # TODO not passing 'sess' causes error on 'null' tiles
     # should i assume we should never call these funcs on tiles we don't expect data to exist for?

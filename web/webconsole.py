@@ -184,13 +184,12 @@ class TileCoverHandler(TileRequestHandler):
             payload = [rel_tile(t) for t in desc]
         else:
             # search current and ancestor levels
-            ancestor_ix = [tile.qt[:-i if i > 0 else None] for i in range(lookback + 1) if i <= len(tile.qt)]
-            ancestors = sess.query(mt.Tile).filter_by(layer=tile.layer).filter(mt.Tile.qt.in_(ancestor_ix))
-            found = sorted(t.qt for t in ancestors)
-            if found:
-                payload = [{'z': len(found[-1]) - tile.z}]
-            else:
-                payload = []
+            ancestors = tile.get_ancestors(sess, lookback)
+            payload = []
+            for i, t in enumerate(ancestors):
+                if t:
+                    payload.append({'z': -i})
+                    break
 
         self.set_header('Content-Type', 'text/json')
         self.write(json.dumps(payload))
