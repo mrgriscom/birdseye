@@ -65,6 +65,28 @@ function init_console() {
 	}, 'json');
 }
 
+function init_playground() {
+    var map = new L.Map('map', {
+	    maxZoom: MAX_ZOOM,
+	});
+    map.setView(new L.LatLng(30., 0.), DEFAULT_ZOOM);
+    map.addControl(new L.Control.Scale({
+            maxWidth: 125,
+	    position: 'bottomright',                       
+	}));
+    var layersControl = new L.Control.Layers();
+    map.addControl(layersControl);
+
+    var _p = new ActiveLoc(map);
+    map.addControl(_p.mk_control());
+
+    $.get('/layers', {default_zoom: DEFAULT_ZOOM}, function(data) {
+	    $.each(data, function(i, e) {
+		    layersControl.addOverlay(source_layer(e, url_param('mode', 'proxy')), e.name);
+		});
+	}, 'json');
+}
+
 function tile_url(spec, zoom, point) {
     var replace = function(key, sub) {
         spec = spec.replace(new RegExp('{' + key + '(:[^}]+)?}', 'g'), function(match, submatch) {

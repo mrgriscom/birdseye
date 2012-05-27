@@ -7,7 +7,6 @@ import os
 import httplib
 import Queue
 import hashlib
-from Polygon import *
 import maptile as mt
 from downloadmanager import DownloadManager
 import settings

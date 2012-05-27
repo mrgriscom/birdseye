@@ -318,10 +318,13 @@ class LocationSearchHandler(web.RequestHandler):
 
         return filter(lambda e: e, [make_marker(pm) for pm in kml.findall('.//%s' % _('Placemark'))])
 
-class RootContentHandler(web.StaticFileHandler):
+class MainHandler(web.RequestHandler):
     def get(self):
-        super(RootContentHandler, self).get('map.html')
+        self.render('map.html', onload='init_console')
 
+class LayerPlaygroundHandler(web.RequestHandler):
+    def get(self):
+        self.render('map.html', onload='init_playground')
 
 def tile_fetch_callback(meta, status, data):
     IOLoop.instance().add_callback(lambda: meta['callback'](md.normdata(status, data)))
@@ -357,9 +360,10 @@ if __name__ == "__main__":
         (r'/saveprofile', SaveProfileHandler),
         (r'/savewaypoint', SaveWaypointHandler),
         (r'/locsearch', LocationSearchHandler),
-        (r'/', RootContentHandler, {'path': projpath('web/static')}),
+        (r'/', MainHandler),
+        (r'/play', LayerPlaygroundHandler),
         (r'/(.*)', web.StaticFileHandler, {'path': projpath('web/static')}),
-    ])
+    ], template_path=projpath('web/templates'))
     application.listen(port, ssl_options=ssl)
 
     try:
