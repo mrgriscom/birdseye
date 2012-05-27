@@ -820,6 +820,7 @@ Waypoint = L.Marker.extend({
 	    var wpt = this;
 	    $c.find('#edit').click(function() {
 		    wpt.edit_mode(true);
+		    return false;
 		});
 	    $c.find('#submit').click(function() {
 		    wpt.save();
@@ -953,6 +954,7 @@ SearchResult = L.Marker.extend({
 	    var sr = this;
 	    this.$content.find('#use').click(function() {
 		    sr.activate();
+		    return false;
 		});
 
 	    this.$content.show();
@@ -1004,6 +1006,7 @@ NewWaypoint = L.Control.extend({
 		    L.DomEvent.disableClickPropagation(div);	    
 		    $div.find('#newwpt').click(function() {
 			    new_waypoint(map);
+			    return false;
 			});
 
 		    var resultsGroup = new L.LayerGroup();
@@ -1036,6 +1039,7 @@ NewWaypoint = L.Control.extend({
 
 		    $div.find('#clearresults').click(function() {
 			    resultsGroup.clearLayers();
+			    return false;
 			});
 
 		    setTimeout(function() {
@@ -1075,6 +1079,8 @@ ManagementOptions = L.Control.extend({
 			if ($(mo._container).find('a:visible').length == 0) {
 			    map.removeControl(mo);
 			}
+
+			return false;
 		    });
 	    }
 
