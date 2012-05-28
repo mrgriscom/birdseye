@@ -74,15 +74,20 @@ function init_playground() {
             maxWidth: 125,
 	    position: 'bottomright',                       
 	}));
-    var layersControl = new L.Control.Layers();
-    map.addControl(layersControl);
 
     var _p = new ActiveLoc(map);
     map.addControl(_p.mk_control());
 
+    map.addControl(new NewWaypoint());
+    $('#newwpt').hide();
+    $('#use').hide();
+
+    var layersControl = new L.Control.Layers();
+    map.addControl(layersControl);
+
     $.get('/layers', {default_zoom: DEFAULT_ZOOM}, function(data) {
 	    $.each(data, function(i, e) {
-		    layersControl.addOverlay(source_layer(e, url_param('mode', 'proxy')), e.name);
+		    layersControl.addOverlay(make_layer(e, 'source'), e.name);
 		});
 	}, 'json');
 }
@@ -993,7 +998,7 @@ SearchResult = L.Marker.extend({
 
 	bounds: function() {
 	    var p = this.getLatLng();
-	    var r = Math.max(this.options.radius, 300.); // the minimum radius determines the max zoom level
+	    var r = Math.max(this.options.radius || 0., 300.); // the minimum radius determines the max zoom level
 
 	    var map_w = $('#map').width();
 	    var map_h = $('#map').height();
@@ -1036,26 +1041,46 @@ NewWaypoint = L.Control.extend({
 
 		    var $searchbutton = $div.find('#search');
 		    $searchbutton.click(function() {
-			    var query = $.trim($div.find('#searchquery').val());
-			    if (!query) {
-				return false;
-			    }
-			    
-			    $searchbutton.attr('disabled', 'true');
-			    $.get('/locsearch', {q: query}, function(data) {
-				    $searchbutton.removeAttr('disabled');
+			    (function() {
+				var query = $.trim($div.find('#searchquery').val());
+				if (!query) {
+				    return;
+				}
 
-				    if (data.status == 'success') {
-					if (data.results.length == 0) {
-					    alert('0 matches');
+				var onresults = function(results) {
+				    show_search_results(results, map, resultsGroup);
+				};
+				var onnoresults = function() {
+				    alert('0 matches');
+				};
+				var onerror = function() {
+				    alert('search failed: ' + data.message);
+				};
+
+				var pos = parse_ll(query);
+				if (pos) {
+				    var lat = pos[0];
+				    var lon = pos[1];
+				    var fpos = fmt_pos(lat, lon, WAYPOINT_PREC);
+				    onresults([{lat: lat, lon: lon, name: fpos.lat + ' ' + fpos.lon}]);
+				    return;
+				}
+
+				$searchbutton.attr('disabled', 'true');
+				$.get('/locsearch', {q: query}, function(data) {
+					$searchbutton.removeAttr('disabled');
+
+					if (data.status == 'success') {
+					    if (data.results.length == 0) {
+						onnoresults();
+					    } else {
+						onresults(data.results);
+					    }
 					} else {
-					    show_search_results(data.results, map, resultsGroup);
+					    onerror();
 					}
-				    } else {
-					alert('search failed: ' + data.message);
-				    }
-				});
-			    
+				    });
+			    })();
 			    return false;
 			});
 
@@ -1121,6 +1146,16 @@ function ctrl_init(sel, custom_init) {
 	custom_init($div, $div[0]);
     }
     return $div[0];
+}
+
+function make_layer(lyrspec, type) {
+    var layer = ({
+	    source: function(l) { return source_layer(l, url_param('mode', 'proxy'), true); },
+	    cached: function(l) { return cache_layer(l, true); },
+	    coverage: function(l) { return coverage_layer(l); },
+	}[type])(lyrspec);
+    layer.options.maxZoom = MAX_ZOOM;
+    return layer;
 }
 
 function cache_layer(lyrspec, notfound) {
@@ -1295,6 +1330,25 @@ function fmt_pos(lat, lon, prec) {
     };
 }
 
+function parse_ll(s) {
+    var k = [];
+    var all_numeric = true;
+    $.each(s.split(' '), function(i, e) {
+	    if (e) {
+		var x = +$.trim(e);
+		k.push(x);
+		if (isNaN(x)) {
+		    all_numeric = false;
+		}
+	    }
+	});
+    if (k.length != 2 || !all_numeric || k[0] < -90 || k[0] > 90 || k[1] < -180 || k[1] > 180) {
+	return null;
+    }
+
+    return k;
+}
+
 function url_param(param, value) {
     var url = window.location.href;
     var params = url.substring(url.indexOf('?') + 1);
@@ -1385,12 +1439,7 @@ LayerControl = L.Control.Layers.extend({
             $.each(this.active_layers, function(type, maplayer) {
                     // add layers if layer type defined and overlay type selected and no layer already set
                     if (maplayer == null && active_layer != null && active_overlays.indexOf(type) != -1) {
-                        var maplayer = ({
-                                source: function(l) { return source_layer(l, url_param('mode', 'proxy'), true); },
-                                cached: function(l) { return cache_layer(l, true); },
-                                coverage: function(l) { return coverage_layer(l); },
-                            }[type])(active_layer);
-                        maplayer.options.maxZoom = MAX_ZOOM;
+                        var maplayer = make_layer(active_layer, type);
                         lc._map.addLayer(maplayer);
                         lc.active_layers[type] = maplayer;
                         console.log('adding layer: ' + type + ' ' + active_layer.id);
