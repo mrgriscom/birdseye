@@ -7,6 +7,8 @@ import random
 import settings
 import logging
 import os.path
+import shutil
+import tempfile
 
 EPSILON = 1.0e-9
 
@@ -343,3 +345,54 @@ def parse_ll(raw):
         return None
 
     return (lat, lon)
+
+def save_waypoints(waypoints, new_section_hdr=None, make_backup=True):
+    path = waypoints_path()
+
+    if not waypoints:
+        return
+
+    with open(path) as f:
+        lns = f.readlines()
+
+    for wpt in waypoints:
+        wpt['section'] = new_section_hdr
+        store_waypoint(wpt, lns)
+
+    if make_backup:
+        shutil.copyfile(path, tempfile.mktemp('.wpt.bk', 'birdseye-'))
+        
+    with open(path, 'w') as f:
+        f.writelines(lns)
+
+def store_waypoint(waypoint, lns):
+    def writeln(wpt):
+        fmt = '%(name)s: %(lat)s %(lon)s'
+        if wpt['desc']:
+            fmt += '  # %(desc)s' 
+        fmt += '\n'
+        return fmt % wpt
+
+    def findln(s):
+        for i, ln in enumerate(lns):
+            if ln.startswith(s):
+                return i
+
+    existing_line = None
+    if waypoint['key']:
+        existing_line = findln(waypoint['key'] + ':')
+
+    entry = writeln(waypoint)
+    if existing_line is not None:
+        lns[existing_line] = entry
+    else:
+        section = waypoint.get('section')
+        if section:
+            header = '## %s' % section
+            header_line = findln(header)
+            if header_line is not None:
+                lns.insert(header_line + 1, entry)
+            else:
+                lns.extend(['\n\n%s\n' % header, entry])
+        else:
+            lns.append(entry)
