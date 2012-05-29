@@ -17,6 +17,7 @@ import os
 import logging
 import settings
 from gps.gpslistener import GPSSubscription
+from contextlib import contextmanager
 
 SCREEN_WIDTH = 1920
 SCREEN_HEIGHT = 1080
@@ -165,123 +166,115 @@ def DrawGLScene():
     glMatrixMode(GL_MODELVIEW)
     glLoadIdentity()					# Reset The View 
 
-    glPushMatrix()
-#    glTranslatef(-1.333, 0, 0)
-#    glRotatef(90 - v[1], 0, 0, 1)
+    with gltransform():
+        rotate = False
+        if rotate:
+            glTranslatef(-1.333, 0, 0)
+            glRotatef(90 - v[1], 0, 0, 1)
 
-    glPushMatrix()
-    glTranslatef(-texwidth/2, -texheight/2, 0.)
-    glTranslatef(tile[0] - tilef[0], tile[1] - tilef[1], 0.)
+        with gltransform():
+            glTranslatef(-texwidth/2, -texheight/2, 0.)
+            glTranslatef(tile[0] - tilef[0], tile[1] - tilef[1], 0.)
 
-    glEnable(GL_TEXTURE_2D)
-    glBindTexture(GL_TEXTURE_2D, maptexid)     # 2d texture (x and y size)
-    glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_DECAL)
-
-    glBegin(GL_QUADS)
-    glColor3f(.8,.7,.4)
-    glTexCoord2f(0.0, 1.0) 
-    glVertex3f(0.0, 0.0, 0.0)
-    glTexCoord2f(1.0, 1.0) 
-    glVertex3f(texwidth, 0.0, 0.0)
-    glTexCoord2f(1.0, 0.0) 
-    glVertex3f(texwidth, texheight, 0.0)
-    glTexCoord2f(0.0, 0.0) 
-    glVertex3f(0.0, texheight, 0.0)
-    glEnd()
-
-    glPopMatrix()
-
-    glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE)
-
-    #destination marker
-    if destpos != None:
-        dp = maptile.xy_to_tilef(maptile.mercator_to_xy(maptile.ll_to_mercator(destpos)), zoom)
-
-        rotspeed = [100, -10, 130]
-
-        glPushMatrix()
-        glTranslatef(dp[0] - tilef[0], dp[1] - tilef[1], 0)
-
-        for i in range(0, 3):
-            glBindTexture(GL_TEXTURE_2D, markertexids[i])
-
-            glPushMatrix()
-            glRotatef(clock() * rotspeed[i], 0, 0, 1)
+            glEnable(GL_TEXTURE_2D)
+            glBindTexture(GL_TEXTURE_2D, maptexid)     # 2d texture (x and y size)
+            glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_DECAL)
 
             glBegin(GL_QUADS)
-            glColor4f(0., 0, 1, .55)
+            glColor3f(.8,.7,.4)
             glTexCoord2f(0.0, 1.0) 
-            glVertex3f(-0.125, 0.125, 0.0)
+            glVertex3f(0.0, 0.0, 0.0)
             glTexCoord2f(1.0, 1.0) 
-            glVertex3f(0.125, 0.125, 0.0)
+            glVertex3f(texwidth, 0.0, 0.0)
             glTexCoord2f(1.0, 0.0) 
-            glVertex3f(0.125, -0.125, 0.0)
+            glVertex3f(texwidth, texheight, 0.0)
             glTexCoord2f(0.0, 0.0) 
-            glVertex3f(-0.125, -0.125, 0.0)
+            glVertex3f(0.0, texheight, 0.0)
+            glEnd()
+    
+            glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE)
+
+        #destination marker
+        if destpos != None:
+            dp = maptile.xy_to_tilef(maptile.mercator_to_xy(maptile.ll_to_mercator(destpos)), zoom)
+
+            rotspeed = [100, -10, 130]
+
+            with gltransform():
+                glTranslatef(dp[0] - tilef[0], dp[1] - tilef[1], 0)
+
+                for i in range(0, 3):
+                    glBindTexture(GL_TEXTURE_2D, markertexids[i])
+
+                    with gltransform():
+                        glRotatef(clock() * rotspeed[i], 0, 0, 1)
+
+                        glBegin(GL_QUADS)
+                        glColor4f(0., 0, 1, .55)
+                        glTexCoord2f(0.0, 1.0) 
+                        glVertex3f(-0.125, 0.125, 0.0)
+                        glTexCoord2f(1.0, 1.0) 
+                        glVertex3f(0.125, 0.125, 0.0)
+                        glTexCoord2f(1.0, 0.0) 
+                        glVertex3f(0.125, -0.125, 0.0)
+                        glTexCoord2f(0.0, 0.0) 
+                        glVertex3f(-0.125, -0.125, 0.0)
+                        glEnd()
+
+            #line to dest
+            glDisable(GL_TEXTURE_2D)
+
+            segment_length = 2.*math.pi*geodesy.EARTH_MEAN_RAD*math.cos(math.radians(pos_center[0]))/(256*2.**zoom) * 20
+            segment_length = min(200000., max(50000., segment_length))
+
+            dist = geodesy.distance(pos, destpos)
+            bear = geodesy.bearing(pos, destpos)
+            vd = geodesy.rangef(0, dist, segment_length)
+            vp = geodesy.plot_dv(pos, bear, vd)
+            pts = [maptile.xy_to_tilef(maptile.mercator_to_xy(maptile.ll_to_mercator(wpt)), zoom) for wpt, _ in vp]
+            pts = [(pt[0] - tilef[0], pt[1] - tilef[1]) for pt in pts]
+
+            filt = [(pt[0]**2. + pt[1]**2.)**.5 < 3 for pt in pts]
+            filt2 = [False] * len(filt)
+            for i in range(0, len(filt)):
+                if filt[i]:
+                    filt2[i] = True
+                    if i > 0:
+                        filt2[i - 1] = True
+                    if i < len(filt) - 1:
+                        filt2[i + 1] = True
+            pts = [pt for (i, pt) in enumerate(pts) if filt2[i]]
+
+            glLineWidth(2.5)
+            glBegin(GL_LINE_STRIP)
+            glColor4f(0, 0, 1, .3)
+            for pt in pts:
+                glVertex3f(pt[0], pt[1], 0.0)
             glEnd()
 
-            glPopMatrix()
+            glEnable(GL_TEXTURE_2D)
 
-        glPopMatrix()
+        #position marker
+        with gltransform():
+            glTranslatef(pf[0] - tilef[0], pf[1] - tilef[1], 0)
+            glRotatef(v[1], 0., 0., 1.)
 
-        #line to dest
-        glDisable(GL_TEXTURE_2D)
+            glBindTexture(GL_TEXTURE_2D, curstexid)
 
-        segment_length = 2.*math.pi*geodesy.EARTH_MEAN_RAD*math.cos(math.radians(pos_center[0]))/(256*2.**zoom) * 20
-        segment_length = min(200000., max(50000., segment_length))
-
-        dist = geodesy.distance(pos, destpos)
-        bear = geodesy.bearing(pos, destpos)
-        vd = geodesy.rangef(0, dist, segment_length)
-        vp = geodesy.plot_dv(pos, bear, vd)
-        pts = [maptile.xy_to_tilef(maptile.mercator_to_xy(maptile.ll_to_mercator(wpt)), zoom) for wpt in vp]
-        pts = [(pt[0] - tilef[0], pt[1] - tilef[1]) for pt in pts]
-
-        filt = [(pt[0]**2. + pt[1]**2.)**.5 < 3 for pt in pts]
-        filt2 = [False] * len(filt)
-        for i in range(0, len(filt)):
-            if filt[i]:
-                filt2[i] = True
-                if i > 0:
-                    filt2[i - 1] = True
-                if i < len(filt) - 1:
-                    filt2[i + 1] = True
-        pts = [pt for (i, pt) in enumerate(pts) if filt2[i]]
-
-        glLineWidth(2.5)
-        glBegin(GL_LINE_STRIP)
-        glColor4f(0, 0, 1, .3)
-        for pt in pts:
-            glVertex3f(pt[0], pt[1], 0.0)
-        glEnd()
-
-        glEnable(GL_TEXTURE_2D)
-
-    #position marker
-    glPushMatrix()
-    glTranslatef(pf[0] - tilef[0], pf[1] - tilef[1], 0)
-    glRotatef(v[1], 0., 0., 1.)
-
-    glBindTexture(GL_TEXTURE_2D, curstexid)
-
-    glBegin(GL_QUADS)
-    if age < 5.:
-        glColor4f(1., 0., 0., cursalpha(clock()))
-    else:
-        glColor4f(.3, .3, .3, cursalpha(clock()))
-    glTexCoord2f(0.0, 1.0) 
-    glVertex3f(0.125, -0.125, 0.0)
-    glTexCoord2f(1.0, 1.0) 
-    glVertex3f(-0.125, -0.125, 0.0)
-    glTexCoord2f(1.0, 0.0) 
-    glVertex3f(-0.125, 0.125, 0.0)
-    glTexCoord2f(0.0, 0.0) 
-    glVertex3f(0.125, 0.125, 0.0)
-    glEnd()
-
-    glPopMatrix()
-
-    glPopMatrix()
+            glBegin(GL_QUADS)
+            if age < 5.:
+                glColor4f(1., 0., 0., cursalpha(clock()))
+            else:
+                glColor4f(.3, .3, .3, cursalpha(clock()))
+            glTexCoord2f(0.0, 1.0) 
+            glVertex3f(0.125, -0.125, 0.0)
+            glTexCoord2f(1.0, 1.0) 
+            glVertex3f(-0.125, -0.125, 0.0)
+            glTexCoord2f(1.0, 0.0) 
+            glVertex3f(-0.125, 0.125, 0.0)
+            glTexCoord2f(0.0, 0.0) 
+            glVertex3f(0.125, 0.125, 0.0)
+            glEnd()
 
     #clock
     inst = datetime.now()
@@ -303,24 +296,21 @@ def DrawGLScene():
 
     glBindTexture(GL_TEXTURE_2D, texttexid)
 
-    glPushMatrix()
-    glTranslatef(3.10, -2.11, 0)
+    with gltransform():
+        glTranslatef(3.10, -2.11, 0)
 
-    glPushMatrix()
-    glScalef(.5, .5, 1.)
-    writeText(datestr)
-    glPopMatrix()
+        with gltransform():
+            glScalef(.5, .5, 1.)
+            writeText(datestr)
 
-    glPushMatrix()
-    glTranslatef(.48, 0, 0)
-    glScalef(.4, .5, 1.)
-    writeText(offsetstr)
-    glPopMatrix()
+        with gltransform():
+            glTranslatef(.48, 0, 0)
+            glScalef(.4, .5, 1.)
+            writeText(offsetstr)
 
-    glTranslatef(0, .05, 0)
-    writeText(timestr)
-
-    glPopMatrix()
+        with gltransform():
+            glTranslatef(0, .05, 0)
+            writeText(timestr)
 
     #distance
     if destpos != None:
@@ -331,40 +321,33 @@ def DrawGLScene():
 
         glBindTexture(GL_TEXTURE_2D, texttexid)
 
-        glPushMatrix()
-        glTranslatef(-3.74, -2.11, 0)
+        with gltransform():
+            glTranslatef(-3.74, -2.11, 0)
 
-        writeText(diststr)
-
-        glPopMatrix()
-
+            writeText(diststr)
 
         #eta
-        glPushMatrix()
-        glTranslatef(-1.99, -1.06, 0)
-        glScalef(.7, .7, 1)
+        with gltransform():
+            glTranslatef(-1.99, -1.06, 0)
+            glScalef(.7, .7, 1)
 
-        if v != None and v[0] != None and v[1] != None:
-            velo = v[0] if v[0] > 0 else 0.001
-            deviation = v[1] - bear
-            vmg = velo * math.cos(math.radians(deviation))
-            eta = int(dist / vmg)
+            if v != None and v[0] != None and v[1] != None:
+                velo = v[0] if v[0] > 0 else 0.001
+                deviation = v[1] - bear
+                vmg = velo * math.cos(math.radians(deviation))
+                eta = int(dist / vmg)
 
-            if eta > 100 * 3600.:
-                etastr = '-----'
+                if eta > 100 * 3600.:
+                    etastr = '-----'
+                else:
+                    (etah, etam, etas) = (eta / 3600, (eta / 60) % 60, eta % 60)
+                    etastr = '%d %d %d' % (etah, etam, etas)
             else:
-                (etah, etam, etas) = (eta / 3600, (eta / 60) % 60, eta % 60)
-                etastr = '%d %d %d' % (etah, etam, etas)
-        else:
-            etastr = '-----'
+                etastr = '-----'
 
 
 
-#        writeText(etastr)
-
-        glPopMatrix()
-
-
+#            writeText(etastr)
 
     #scale bar
     global scales
@@ -393,52 +376,46 @@ def DrawGLScene():
     length = scale[0] / meters_per_pixel
     lab = scale[1]
 
-    glPushMatrix()
-    glTranslatef(3.70, (287+240)/256., 0)    
+    with gltransform():
+        glTranslatef(3.70, (287+240)/256., 0)    
 
-    glDisable(GL_TEXTURE_2D)
-    glLineWidth(6)
-    glBegin(GL_LINE_STRIP)
-    color = (.2, .2, .2, .7) if view == 'map' else (.9, .9, .9, .7)
-    glColor4f(*color)
-    glVertex3f(0, 0, 0.0)
-    glVertex3f(-length / 256., 0, 0.0)
-    glEnd()
+        glDisable(GL_TEXTURE_2D)
+        glLineWidth(6)
+        glBegin(GL_LINE_STRIP)
+        color = (.2, .2, .2, .7) if view == 'map' else (.9, .9, .9, .7)
+        glColor4f(*color)
+        glVertex3f(0, 0, 0.0)
+        glVertex3f(-length / 256., 0, 0.0)
+        glEnd()
 
-    glPushMatrix()
-    glTranslatef(0, -.08, 0)
-    glScalef(.5, .5, 1)
-    glTranslatef(-textLen(lab)/256., 0, 0)
+        with gltransform():
+            glTranslatef(0, -.08, 0)
+            glScalef(.5, .5, 1)
+            glTranslatef(-textLen(lab)/256., 0, 0)
 
-    glEnable(GL_TEXTURE_2D)
-    glBindTexture(GL_TEXTURE_2D, texttexid)
+            glEnable(GL_TEXTURE_2D)
+            glBindTexture(GL_TEXTURE_2D, texttexid)
 
-    writeText(lab)
-
-    glPopMatrix()
-    glPopMatrix()
+            writeText(lab)
 
     #position
     tw = textLen(u'W999.99999\xb0')/256. + .02
     slat = u'%08.5f\xb0' % abs(pos_center[0])
     slon = u'%09.5f\xb0' % abs(pos_center[1])
 
-    glPushMatrix()
-    glTranslatef(-3.74, 1.955, 0)
-    glScalef(.7, .7, 0)
+    with gltransform():
+        glTranslatef(-3.74, 1.955, 0)
+        glScalef(.7, .7, 0)
 
-    writeText('N' if pos_center[0] >= 0 else 'S')
-    glPushMatrix()
-    glTranslatef(tw - textLen(slat)/256., 0, 0)
-    writeText(slat)
-    glPopMatrix()
+        writeText('N' if pos_center[0] >= 0 else 'S')
+        with gltransform():
+            glTranslatef(tw - textLen(slat)/256., 0, 0)
+            writeText(slat)
 
-    glTranslatef(0, .1, 0)
-    writeText('E' if pos_center[1] >= 0 else 'W')
-    glTranslatef(tw - textLen(slon)/256., 0, 0)
-    writeText(slon)
-
-    glPopMatrix()
+        glTranslatef(0, .1, 0)
+        writeText('E' if pos_center[1] >= 0 else 'W')
+        glTranslatef(tw - textLen(slon)/256., 0, 0)
+        writeText(slon)
 
     glutSwapBuffers()
 
@@ -649,7 +626,11 @@ def parse_args (args):
 
 
 
-
+@contextmanager
+def gltransform():
+    glPushMatrix()
+    yield
+    glPopMatrix()
 
 
 
