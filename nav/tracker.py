@@ -172,16 +172,20 @@ def interpolate(axis, data, params={}):
     factors = list(solve(*(np.array(m[:4]) for m in zip(*equations()))))
     return lambda dt: project(dt, factors)
 
-# fix me
 def polynomial_factors(degree, derivative=0):
-    return [u.fact_div(i + derivative, i) for i in range(0, degree + 1)]
+    """return the constants to evaluate a polynomial: (multiplying factor, exponent) for each term
+
+    e.g., a+bx+cx^2+dx^3+ex^4 (degree 4), at 2nd derivative => [(0,-), (0,-), (2,0), (6,1), (12,2)] => 2c+6dx+12ex^2
+    """
+    def factor(i):
+        exponent = i - derivative
+        return (u.fact_div(i, exponent), exponent) if exponent >= 0 else (0, None)
+    return [factor(i) for i in range(degree + 1)]
 
 def project(t, factors):
     """evaluate a polynomial and its derivatives"""
     def polynomial(derivative):
-        def weight(i):
-            return u.fact_div(i + derivative, i)
-        return sum(weight(i) * k * t**i for i, k in enumerate(factors[derivative:]))
+        return sum(p * f * t**(e or 0.) for f, (p, e) in zip(factors, polynomial_factors(len(factors), derivative)))
 
     if factors:
         return [polynomial(i) for i in range(len(factors))]
