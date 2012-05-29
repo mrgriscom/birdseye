@@ -152,24 +152,26 @@ def split_by_axis(coords):
 def interpolate(axis, data, params={}):
     p = data[0]['p']
     if p is None:
-        return None
+        factors = None
+    else:
 
-    # 'none' amongst older points?
+        # what about 'none' amongst older points?
+        experimental_mode = False
+        # experimental_mode creates a spline using the last several fixes
+        # normal mode just uses the current p and v
 
-    experimental_mode = False
+        def equations():
+            for i, e in enumerate(data if experimental_mode else data[:1]):
+                t = e['t']
+                yield (polynomial_terms(t, [1] * 4, 0), e['p'])
+                if not experimental_mode:
+                    yield (polynomial_terms(t, [1] * 4, 1), e['v'] or 0.)
 
-    def equations():
-        for i, e in enumerate(data if experimental_mode else data[:1]):
-            t = e['t']
-            yield ((1, t, t**2, t**3), e['p'])
-            if not experimental_mode:
-                yield ((0, 1, 2*t, 3*t**2), e['v'] or 0.)
+            yield((0,0,0,1),0.)
+            yield((0,0,1,0),0.)
+            yield((0,1,0,0),0.)
 
-        yield((0,0,0,1),0.)
-        yield((0,0,1,0),0.)
-        yield((0,1,0,0),0.)
-
-    factors = list(solve(*(np.array(m[:4]) for m in zip(*equations()))))
+        factors = list(solve(*(np.array(m[:4]) for m in zip(*equations()))))
     return lambda dt: project(dt, factors)
 
 def polynomial_factors(degree, derivative=0):
@@ -182,10 +184,13 @@ def polynomial_factors(degree, derivative=0):
         return (u.fact_div(i, exponent), exponent) if exponent >= 0 else (0, None)
     return [factor(i) for i in range(degree + 1)]
 
+def polynomial_terms(t, factors, derivative):
+    return [p * f * t**(e or 0.) for f, (p, e) in zip(factors, polynomial_factors(len(factors), derivative))]
+
 def project(t, factors):
     """evaluate a polynomial and its derivatives"""
     def polynomial(derivative):
-        return sum(p * f * t**(e or 0.) for f, (p, e) in zip(factors, polynomial_factors(len(factors), derivative)))
+        return sum(polynomial_terms(t, factors, derivative))
 
     if factors:
         return [polynomial(i) for i in range(len(factors))]
