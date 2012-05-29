@@ -27,7 +27,6 @@ ESCAPE = '\x1b'
 window = 0
 
 zoom = None
-view = 'map'
 curview = None
 
 texwidth = 10
@@ -382,7 +381,7 @@ def DrawGLScene():
         glDisable(GL_TEXTURE_2D)
         glLineWidth(6)
         glBegin(GL_LINE_STRIP)
-        color = (.2, .2, .2, .7) if view == 'map' else (.9, .9, .9, .7)
+        color = (.2, .2, .2, .7) if view == 'googmap' else (.9, .9, .9, .7)
         glColor4f(*color)
         glVertex3f(0, 0, 0.0)
         glVertex3f(-length / 256., 0, 0.0)
@@ -442,7 +441,7 @@ def writeText (str):
         cy1 = sy / 256.
 
         glBegin(GL_QUADS)
-        color = (.3, .3, .3, 1.) if view == 'map' else (.8, .8, .8, 1.)
+        color = (.3, .3, .3, 1.) if view == 'googmap' else (.8, .8, .8, 1.)
         glColor4f(*color)
         glTexCoord2f(tx0, ty0) 
         glVertex3f(cx0, cy0, 0.0)
@@ -484,7 +483,8 @@ def keyPressed(*args):
         if zoom > 0:
             zoom -= 1
     elif args[0] == 'v':
-        view = 'sat' if view == 'map' else 'map'
+        views = settings.LAYERS.keys()
+        view = views[(views.index(view) + 1) % len(views)]
     elif args[0] == ESCAPE:
         sys.exit()
 
@@ -578,7 +578,7 @@ def parse_args (args):
 
     parser = OptionParser()
     parser.add_option('-z', '--zoom', dest='zoom', default='7')
-    parser.add_option('-v', '--view', dest='view', default='map')
+    parser.add_option('-v', '--view', dest='view', default='googmap')
     parser.add_option('--dp', dest='demopos')
     parser.add_option('--dv', dest='demovel', default='0,0')
     parser.add_option('--hist', dest='hist')
@@ -586,7 +586,7 @@ def parse_args (args):
     (options, args) = parser.parse_args()
 
     zoom = int(options.zoom)
-    if options.view in ['map', 'sat']:
+    if options.view in settings.LAYERS:
         view = options.view
     else:
         print 'unrecognized view type'

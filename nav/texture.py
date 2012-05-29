@@ -74,10 +74,7 @@ def tile_file (mode, zoom, x, y):
   if conn == None:
     conn = maptile.dbsess()
 
-  layer = {
-    'map': 'googmap',
-  }[mode]
-  t = conn.query(maptile.Tile).get((layer, zoom, x, y))
+  t = conn.query(maptile.Tile).get((mode, zoom, x, y))
   return t.open(conn) if t else None
 
 def get_tile(sess, z, x, y, layer):
