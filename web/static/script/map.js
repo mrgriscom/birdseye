@@ -852,6 +852,10 @@ Waypoint = L.Marker.extend({
 	    $c.find('#submit').click(function() {
 		    wpt.save();
 		});
+	    $c.find('#cancel').click(function() {
+		    wpt._map.removeLayer(wpt);
+		    return false;
+		});
 	    $c.find('#name').change(function() {
 		    wpt.onchange();
 		});
@@ -897,6 +901,7 @@ Waypoint = L.Marker.extend({
 	    $c.find('#name')[enabled ? 'show' : 'hide']();
 	    $c.find('#desc')[enabled ? 'show' : 'hide']();
 	    $c.find('#edit')[enabled ? 'hide' : 'show']();
+	    $c.find('#cancel')[enabled && this._key == null ? 'show' : 'hide']();
 	    $c.find('#submit')[enabled ? 'show' : 'hide']();
 	    this.set_dragging(enabled);
 	    this.refresh_popup();
