@@ -955,7 +955,6 @@ Waypoint = L.Marker.extend({
 		onsuccess();
 	    }	    
 	},
-
     });
 
 SearchResult = L.Marker.extend({
@@ -1020,7 +1019,10 @@ function new_waypoint(map, pos) {
     map.addLayer(wpt);
    
     // hack or else popup is immediately closed
-    setTimeout(function() { wpt.openPopup(); }, 200);
+    setTimeout(function() {
+	    wpt.openPopup();
+	    wpt.$content.find('#name').focus();
+	}, 200);
 }
 
 NewWaypoint = L.Control.extend({
