@@ -24,8 +24,6 @@ def parse_yaml_args(f):
     args = {}
 
     args['name'] = str(data.get('name', ''))
-    if not args['name']:
-        raise RuntimeError('region name required')
 
     args['update'] = bool(data.get('update'))
     if args['update'] and args['name'] == mt.Region.GLOBAL_NAME:
@@ -112,9 +110,10 @@ def db_validate(args):
         if not args['region']:
             raise RuntimeError('region "%s" does not exist (supply a region boundary?)' % args['name'])
 
-        args['region'].name = args['name']
-        sess.add(args['region'])
-        sess.commit()
+        if args['name']:
+            args['region'].name = args['name']
+            sess.add(args['region'])
+            sess.commit()
         region = args['region']
 
     args['region'] = region.merc_poly()
