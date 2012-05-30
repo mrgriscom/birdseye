@@ -18,6 +18,8 @@ import logging
 import settings
 from gps.gpslistener import GPSSubscription
 from contextlib import contextmanager
+import threading
+import Queue
 
 SCREEN_WIDTH = 1920
 SCREEN_HEIGHT = 1080
@@ -27,12 +29,11 @@ ESCAPE = '\x1b'
 window = 0
 
 zoom = None
-curview = None
 
+texture_manager = None
 texwidth = 10
 texheight = 6
 
-maptexid = None
 curstexid = None
 markertexids = None
 texttexid = None
@@ -124,21 +125,51 @@ def LoadStaticTextures ():
         xc += sz[0]
     LoadTexture(texttexid, timg, True)
 
-    
+class TextureThread(threading.Thread):
+    def __init__(self, tex_id):
+        threading.Thread.__init__(self)
+        self.up = True
+        self.lock = threading.Lock()
+        self.in_ = Queue.Queue()
+        self.out = Queue.Queue()
 
-def LoadMapTexture (view, zoom, tile):
-    global maptexid
-    if maptexid == None:
-        maptexid = glGenTextures(1)
-        print maptexid
+        self.tex_id = tex_id
+        self.curview = None
 
-    xmin = tile[0] - texwidth / 2
-    ymin = tile[1] - texheight / 2
+    def terminate(self):
+        self.up = False
 
-    tex_image = texture.get_texture_image(view, zoom, xmin, ymin, texwidth, texheight)
-    LoadTexture(maptexid, tex_image)
+    def set(self, view, zoom, tile):
+        self.in_.put((view, zoom, tile))
+            
+    def run(self):
+        while self.up:
+            try:
+                newview = self.in_.get(True, 0.05)
+            except Queue.Empty:
+                newview = None
+            
+            if newview and newview != self.curview:
+                view, zoom, tile = newview
+                xmin = tile[0] - texwidth / 2
+                ymin = tile[1] - texheight / 2
 
-    glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_DECAL)
+                tex_image = texture.get_texture_image(view, zoom, xmin, ymin, texwidth, texheight)
+
+                def update_texture():
+                    LoadTexture(self.tex_id, tex_image)
+                    glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_DECAL)
+
+                with self.lock:
+                    self.curview = newview
+                    self.out.put(update_texture)
+
+    def translate(self, tile, tilef):
+        with self.lock:
+            if self.curview:
+                tile = self.curview[2]
+            glTranslatef(tile[0] - tilef[0], tile[1] - tilef[1], 0.)
+
 
 def DrawGLScene():
  try:
@@ -156,10 +187,12 @@ def DrawGLScene():
 
     pf = maptile.xy_to_tilef(maptile.mercator_to_xy(maptile.ll_to_mercator(pos)), zoom)
 
-    global curview
-    if curview != (view, zoom, tile):
-        curview = (view, zoom, tile)
-        LoadMapTexture(view, zoom, tile)
+    texture_manager.set(view, zoom, tile)
+    try:
+        tex_update = texture_manager.out.get(False)
+        tex_update()
+    except Queue.Empty:
+        pass
 
     glClear(GL_COLOR_BUFFER_BIT)
     glMatrixMode(GL_MODELVIEW)
@@ -173,10 +206,10 @@ def DrawGLScene():
 
         with gltransform():
             glTranslatef(-texwidth/2, -texheight/2, 0.)
-            glTranslatef(tile[0] - tilef[0], tile[1] - tilef[1], 0.)
+            texture_manager.translate(tile, tilef)
 
             glEnable(GL_TEXTURE_2D)
-            glBindTexture(GL_TEXTURE_2D, maptexid)     # 2d texture (x and y size)
+            glBindTexture(GL_TEXTURE_2D, texture_manager.tex_id)     # 2d texture (x and y size)
             glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_DECAL)
 
             glBegin(GL_QUADS)
@@ -190,7 +223,7 @@ def DrawGLScene():
             glTexCoord2f(0.0, 0.0) 
             glVertex3f(0.0, texheight, 0.0)
             glEnd()
-    
+            
             glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE)
 
         #destination marker
@@ -486,6 +519,7 @@ def keyPressed(*args):
         views = settings.LAYERS.keys()
         view = views[(views.index(view) + 1) % len(views)]
     elif args[0] == ESCAPE:
+        texture_manager.terminate()
         sys.exit()
 
 def main():
@@ -507,6 +541,10 @@ def main():
     glutKeyboardFunc(keyPressed)
 
     InitGL(SCREEN_WIDTH, SCREEN_HEIGHT)
+
+    global texture_manager
+    texture_manager = TextureThread(glGenTextures(1))
+    texture_manager.start()
 
     glutMainLoop()
 
