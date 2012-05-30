@@ -1074,7 +1074,8 @@ NewWaypoint = L.Control.extend({
 				}
 
 				$searchbutton.attr('disabled', 'true');
-				$.get('/locsearch', {q: query}, function(data) {
+				var center = map.getCenter();
+				$.get('/locsearch', {q: query, locus: center.lat + ',' + center.lng}, function(data) {
 					$searchbutton.removeAttr('disabled');
 
 					if (data.status == 'success') {

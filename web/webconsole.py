@@ -240,9 +240,17 @@ class LocationSearchHandler(web.RequestHandler):
     @gen.engine
     def get(self):
         query = self.get_argument('q')
+        locus = self.get_argument('locus', None)
+
+        args = {
+            'q': query, 
+            'output': 'kml',
+        }
+        if locus:
+            args['sll'] = locus
 
         http_client = AsyncHTTPClient()
-        request_url = 'http://maps.google.com/maps?' + urllib.urlencode({'q': query, 'output': 'kml'})
+        request_url = 'http://maps.google.com/maps?' + urllib.urlencode(args)
         try:
             resp = yield gen.Task(http_client.fetch, request_url)
             if resp.code != 200 or 'kml' not in resp.headers.get('Content-Type', ''):
