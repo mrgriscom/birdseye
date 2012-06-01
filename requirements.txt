@@ -1,0 +1,8 @@
+pyzmq>=2.1
+SQLAlchemy>=0.7
+numpy
+PyOpenGL>=3.0
+PIL
+PyYAML
+lxml
+Polygon==2.0.4

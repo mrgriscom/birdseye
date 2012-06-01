@@ -1,20 +1,12 @@
-REQUIREMENTS
+INSTALLATION
 
+python 2.x, x >= 6
 gpsd
-python >= 2.6 and < 3
+zeromq
 
-python:
+then:
+pip install -r requirements.txt
 
-zero-mq >= 2.1
-sqlalchemy >= 0.7
-
-numpy
-PIL
-pyopengl
-polygon (2.0.x?) -- todo: replace with shapely?
-ncurses
-yaml
-lxml
 
 ABOUT
 
@@ -42,3 +34,28 @@ available directives:
 {s:0-3} - server shard (0, 1, 2, 3, in this example)
 {s:abc} - server shard (a, b, c, in this example)
 {type} - the specified file type for the layer
+
+
+
+
+mapcache.py download profiles. written in yaml (superset of json)
+
+name: region-name
+region: lat1,lon1 lat2,lon2 lat3,lon3 lat4,lon4 ...
+update: true / false (default)
+layers:
+  # for each layer:
+  <layername>:
+    zoom: download depth
+    # one or none of:
+    refresh-mode: 'always' or 'never' (default)
+    refresh-older-than: #days
+
+name - save region under this name. if ommitted, don't save region and just use as one-off ('region' required)
+region - polygon defining region boundary. if omitted, use saved region for 'name'
+update - if true, update this named region with the new boundary (does NOT affect any tiles downloaded under old region)
+<layername> - the name of a layer defined in settings
+zoom - depth to download to
+refresh-mode: 'always' - download all tiles, even if they already exist in the cache
+              'never' - don't download a tile that already exists in the cache
+refresh-older-than - re-download a cached tile if downloaded more than N days ago
