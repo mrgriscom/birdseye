@@ -127,6 +127,7 @@ def to_lla((x, y, z), base):
     dist = geodesy.vlen([x, y])
     bearing = geodesy._xy_to_bearing(x, y)
     ll = geodesy.plot((base['lat'], base['lon']), bearing, dist)[0]
+    #todo: apply the plot()[1] result to to_vect()?
     return (ll[0], ll[1], z)
 
 def to_vect((x, y, z), mode):

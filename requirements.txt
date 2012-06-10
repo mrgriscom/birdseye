@@ -6,3 +6,5 @@ PIL
 PyYAML
 lxml
 Polygon==2.0.4
+tornado
+psycopg2

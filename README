@@ -1,11 +1,23 @@
 INSTALLATION
 
-python 2.x, x >= 6
+DEPENDENCIES
+
+python >= 2.6, < 3.0
 gpsd
 zeromq
+OpenGL
+a GLUT library, such as freeglut3
 
 then:
 pip install -r requirements.txt
+
+SETUP
+
+in settings.py:
+* create the databases specified in TILE_DB and GPS_LOG_DB
+
+
+birdseye likes to have control over the gpsd process, so may be best to disable gpsd-autostart when the gps is plugged in. everything will still work if not, but birdseye will not be able to tell if/how things go weird.
 
 
 ABOUT

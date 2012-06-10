@@ -9,6 +9,7 @@ import logging
 import os.path
 import shutil
 import tempfile
+from contextlib import contextmanager
 
 EPSILON = 1.0e-9
 
@@ -396,3 +397,10 @@ def store_waypoint(waypoint, lns):
                 lns.extend(['\n\n%s\n' % header, entry])
         else:
             lns.append(entry)
+
+@contextmanager
+def profile(key='-'):
+    start = time.time()
+    yield
+    end = time.time()
+    logging.debug('profiling: %s %.03f' % (key, end - start))
