@@ -83,7 +83,7 @@ LAYERS = {
     },
 }
 
-TILE_DL_UA = 'Mozilla/5.0 (X11; U; Linux i686; en-US) Gecko/20080208 Firefox/2.0.0.13'
+TILE_DL_UA = 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; en-US) Gecko/20100101 Firefox/12.0'
 
 
 ### MAP RENDERING AND NAVIGATION

@@ -31,12 +31,12 @@ window = 0
 zoom = None
 
 # hack
-def make_even(k):
-    return 2. * math.floor(.5 * (k + 1))
+def round_up_even(k):
+    return int(2. * math.floor(.5 * (k + 1)))
 
 texture_manager = None
-texwidth = make_even(SCREEN_WIDTH // 256 + 2)
-texheight = make_even(SCREEN_HEIGHT // 256 + 2)
+texwidth = round_up_even(SCREEN_WIDTH // 256 + 2)
+texheight = round_up_even(SCREEN_HEIGHT // 256 + 2)
 
 curstexid = None
 markertexids = None
@@ -331,7 +331,7 @@ def DrawGLScene():
     glBindTexture(GL_TEXTURE_2D, texttexid)
 
     with gltransform():
-        glTranslatef(3.10, -2.11, 0)
+        glTranslatef(1.35, -1.17, 0)
 
         with gltransform():
             glScalef(.5, .5, 1.)
@@ -356,7 +356,7 @@ def DrawGLScene():
         glBindTexture(GL_TEXTURE_2D, texttexid)
 
         with gltransform():
-            glTranslatef(-3.74, -2.11, 0)
+            glTranslatef(-1.99, -1.17, 0)
 
             writeText(diststr)
 
@@ -411,7 +411,7 @@ def DrawGLScene():
     lab = scale[1]
 
     with gltransform():
-        glTranslatef(3.70, (287+240)/256., 0)    
+        glTranslatef(1.95, (287+0)/256., 0)    
 
         glDisable(GL_TEXTURE_2D)
         glLineWidth(6)
@@ -438,7 +438,7 @@ def DrawGLScene():
     slon = u'%09.5f\xb0' % abs(pos_center[1])
 
     with gltransform():
-        glTranslatef(-3.74, 1.955, 0)
+        glTranslatef(-1.99, 1.015, 0)
         glScalef(.7, .7, 0)
 
         writeText('N' if pos_center[0] >= 0 else 'S')
