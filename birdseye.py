@@ -20,9 +20,9 @@ from gps.gpslistener import GPSSubscription
 from contextlib import contextmanager
 import threading
 import Queue
+import util.util as u
 
-SCREEN_WIDTH = 1920
-SCREEN_HEIGHT = 1080
+SCREEN_WIDTH, SCREEN_HEIGHT = settings.SCREEN_DIM
 
 ESCAPE = '\x1b'
 
@@ -30,9 +30,13 @@ window = 0
 
 zoom = None
 
+# hack
+def make_even(k):
+    return 2. * math.floor(.5 * (k + 1))
+
 texture_manager = None
-texwidth = 10
-texheight = 6
+texwidth = make_even(SCREEN_WIDTH // 256 + 2)
+texheight = make_even(SCREEN_HEIGHT // 256 + 2)
 
 curstexid = None
 markertexids = None
@@ -92,19 +96,17 @@ def LoadTexture(id, image, alpha=False):
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
     glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_DECAL)
 
-projdir = '/home/drew/dev/birdseye'
-
 def LoadStaticTextures ():
     global curstexid
     global markertexids
     curstexid = glGenTextures(1)
     markertexids = [glGenTextures(1) for i in range(0, 3)]
 
-    image = Image.open('%s/pixmap/cursor.png' % projdir)
+    image = Image.open(u.pixmap_path('cursor.png'))
     LoadTexture(curstexid, image, True)
 
     for (id, i) in zip(markertexids, range(1, 4)):
-        image = Image.open('%s/pixmap/target%d.png' % (projdir, i))
+        image = Image.open(u.pixmap_path('target%d.png' % i))
         LoadTexture(id, image, True)
 
     #text
@@ -205,7 +207,7 @@ def DrawGLScene():
             glRotatef(90 - v[1], 0, 0, 1)
 
         with gltransform():
-            glTranslatef(-texwidth/2, -texheight/2, 0.)
+            glTranslatef(-texwidth/2., -texheight/2., 0.)
             texture_manager.translate(tile, tilef)
 
             glEnable(GL_TEXTURE_2D)
@@ -551,54 +553,30 @@ def main():
 
 
 waypoints = None
-
 def load_waypoints ():
     global waypoints
     if waypoints == None:
-        waypoints = {}
-        lines = [l.strip() for l in open('%s/data/waypoints' % projdir).readlines() if l.strip()]        
+        waypoints = u.load_waypoints()
 
-        for l in lines:
-            k = l.find('#')
-            if k >= 0:
-                l = l[:k].strip()
-            if not l:
-                continue
-
-            k = l.find(':')
-            if k == -1:
-                print "can't parse %s" % l
-                continue
-            name = l[:k].strip()
-            pcs = l[k+1:].split()
-            if len(pcs) < 2:
-                print "can't parse %s" % l
-                continue
-            pos = parse_ll(pcs[0] + ',' + pcs[1])
-            if pos == None:
-                print "can't parse %s" % l
-                continue
-
-            waypoints[name] = pos
-
-def parse_ll (arg):
+def parse_pos (arg):
     load_waypoints()
     arg = arg.strip()
+
+    pos = u.parse_ll(arg)
+    if pos:
+        return pos
+
     if arg in waypoints:
-        return waypoints[arg]
+        matches = [waypoints[arg]]
+    else:
+        matches = [wpt for name, wpt in waypoints.iteritems() if name.startswith(arg)]
+    if len(matches) == 1:
+        return matches[0]['pos']
 
-    pcs = arg.split(',')
-    try:
-        lat = float(pcs[0].strip())
-        lon = float(pcs[1].strip())
-    except (IndexError, ValueError):
-        return None
+    if len(matches) > 1:
+        print '"%s" is ambiguous: %s' % (arg, ', '.join(sorted(wpt['name'] for wpt in matches)))
 
-    if lat < -90. or lat > 90. or lon < -180. or lon > 180.:
-        print 'lat/lon out of range'
-        return None
-
-    return (lat, lon)
+    return None
 
 def parse_v (arg):
     pcs = arg.split(',')
@@ -640,7 +618,7 @@ def parse_args (args):
 
         fixstream = tracklog_stream(settings.GPS_LOG_DB, start, speed)
     elif options.demopos:
-        demo_p = parse_ll(options.demopos)
+        demo_p = parse_pos(options.demopos)
         if demo_p == None:
             print 'invalid position'
             sys.exit()
@@ -652,7 +630,7 @@ def parse_args (args):
         fixstream = live_stream(GPSSubscription())
 
     if len(args) > 0:
-        destpos = parse_ll(args[0])
+        destpos = parse_pos(args[0])
         if destpos == None:
             print 'invalid position'
             sys.exit()
@@ -675,6 +653,9 @@ def gltransform():
 if __name__ == "__main__":
 
     logging.basicConfig(level=logging.INFO, stream=sys.stderr, format='')
+
+    u.setup()
+
     parse_args(sys.argv)
 
     print 'waiting for gps lock...'

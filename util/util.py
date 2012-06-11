@@ -288,8 +288,17 @@ def manhattan_dist((x0, y0), (x1, y1)):
 def layer_property(layer, prop, default=None):
     return (settings.LAYERS.get(layer) or {}).get(prop, default)
 
-def waypoints_path(path=settings.WAYPOINTS):
-    return os.path.expanduser(path)
+def proj_path(*args):
+    return os.path.join(settings.PROJECT_ROOT, *args)
+
+def waypoints_path():
+    return os.path.expanduser(settings.WAYPOINTS)
+
+def tiles_path():
+    return os.path.expanduser(settings.TILE_ROOT)
+
+def pixmap_path(pixmap):
+    return proj_path('pixmap', pixmap)
 
 def load_waypoints():
     with open(waypoints_path()) as f:
@@ -404,3 +413,10 @@ def profile(key='-'):
     yield
     end = time.time()
     logging.debug('profiling: %s %.03f' % (key, end - start))
+
+def setup():
+    if not os.path.exists(tiles_path()):
+        os.makedirs(tiles_path())
+
+    if not os.path.exists(waypoints_path()):
+        shutil.copyfile(proj_path('data/waypoints.demo'), waypoints_path())

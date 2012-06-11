@@ -209,6 +209,8 @@ def fatal(msg):
 if __name__ == "__main__":
     settings.init_logging()
 
+    u.setup()
+
     try:
         specfile = open(sys.argv[1])
     except IndexError:

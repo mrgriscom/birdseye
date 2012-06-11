@@ -372,7 +372,7 @@ def loader_curses(win, options):
     w_gpsd.start()
     w_gpsd.start_gpsd()
 
-    w_dispatch = DispatchWatcher(u.try_import(settings.GPS_DEVICE_POLICY) if settings.GPS_DEVICE_POLICY else None)
+    w_dispatch = DispatchWatcher(u.try_import(settings.GPS_DEVICE_POLICY)() if settings.GPS_DEVICE_POLICY else None)
     w_dispatch.start()
     w_dispatch.load()
 

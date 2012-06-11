@@ -27,8 +27,8 @@ import util.util as u
 
 from sqlalchemy import func
 
-def projpath(path):
-    return os.path.join(project_root, path)
+def web_path(*args):
+    return u.proj_path('web', *args)
 
 class LayersHandler(web.RequestHandler):
     """information about available layers"""
@@ -311,6 +311,8 @@ tiledl = md.DownloadService(tile_fetch_callback, sess)
 
 if __name__ == "__main__":
 
+    u.setup()
+
     parser = OptionParser()
     parser.add_option("--ssl", dest="ssl", action='store_true',
                       help="enable ssl; prevents 'Referer' header from being sent to mapservers")
@@ -323,7 +325,7 @@ if __name__ == "__main__":
         port = int(args[0])
     except IndexError:
         port = 8000
-    ssl = {'certfile': projpath('web/ssl.crt')} if options.ssl else None
+    ssl = {'certfile': web_path('ssl.crt')} if options.ssl else None
 
     application = web.Application([
         (r'/layers', LayersHandler, {'dbsess': sess, 'custom': options.urls or []}),
@@ -338,8 +340,8 @@ if __name__ == "__main__":
         (r'/locsearch', LocationSearchHandler),
         (r'/', MainHandler),
         (r'/play', LayerPlaygroundHandler),
-        (r'/(.*)', web.StaticFileHandler, {'path': projpath('web/static')}),
-    ], template_path=projpath('web/templates'))
+        (r'/(.*)', web.StaticFileHandler, {'path': web_path('static')}),
+    ], template_path=web_path('templates'))
     application.listen(port, ssl_options=ssl)
 
     try:

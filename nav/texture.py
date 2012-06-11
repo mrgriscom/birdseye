@@ -5,9 +5,10 @@ from mapcache import mapdownload
 from mapcache import maptile
 import settings
 import sys
+import util.util as u
 
 blocksize = 256
-fallback = 2
+fallback = settings.LOOKBACK
 
 def get_texture_image (mode, zoom, xmin, ymin, width, height):
   tx = new("RGB", (blocksize * width, blocksize * height))
@@ -24,14 +25,14 @@ def get_texture_image (mode, zoom, xmin, ymin, width, height):
 
 def get_img_chunk (mode, zoom, x, y):
   if x < 0 or y < 0 or x >= 2**zoom or y >= 2**zoom:
-    return open('%s/pixmap/space.jpg' % '/home/drew/dev/birdseye')
+    return open(u.pixmap_path('space.jpg'))
 
 
   tile = get_zoom_tile(mode, zoom, x, y)
   if tile == None:
     tile = get_fallback_tile(mode, zoom, x, y)
   if tile == None:
-    missing = '%s/pixmap/missing.jpg' % '/home/drew/dev/birdseye'
+    missing = u.pixmap_path('missing.jpg')
     tile = open(missing)
   return tile
 

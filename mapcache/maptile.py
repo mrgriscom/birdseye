@@ -137,7 +137,7 @@ class TileData(Base):
     def path_intermediary(self):
         """compute all intermediary paths ('buckets')"""
         for i in range(len(settings.TILE_BUCKETS)):
-            yield os.path.join(settings.TILE_ROOT, *(self.uuid[:k] for k in settings.TILE_BUCKETS[:i+1]))
+            yield os.path.join(u.tiles_path(), *(self.uuid[:k] for k in settings.TILE_BUCKETS[:i+1]))
 
     def save(self, sess=None):
         """save tile data to persistent storage"""

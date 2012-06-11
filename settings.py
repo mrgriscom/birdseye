@@ -1,3 +1,4 @@
+import os.path
 import logging
 import logging.handlers
 
@@ -11,7 +12,7 @@ TILE_DB = 'postgresql:///tiles'
 TILE_STORE_BLOB = False
 
 # root directory where tiles are stored
-TILE_ROOT = '/var/lib/birdseye/tiles/'
+TILE_ROOT = '~/.birdseye/tiles'
 # how to clump tiles into directory buckets (shouldn't have too many
 # entries in any one directory)
 # [2, 4]: 53392f0a.jpg => 53/5339/53392f0a.jpg
@@ -98,7 +99,8 @@ LOOKBACK = 2
 
 
 
-
+# TODO: figure these out dynamically
+SCREEN_DIM = (1024, 600)
 
 
 
@@ -118,3 +120,6 @@ try:
     from localsettings import *
 except ImportError:
     pass
+
+
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
