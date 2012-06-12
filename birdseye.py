@@ -32,7 +32,7 @@ zoom = None
 
 # hack
 def round_up_even(k):
-    return int(2. * math.floor(.5 * (k + 1)))
+    return max(int(2. * math.floor(.5 * (k + 1))), 6)
 
 texture_manager = None
 texwidth = round_up_even(SCREEN_WIDTH // 256 + 2)
@@ -51,6 +51,8 @@ scales = None
 
 #units = 'metric'
 units = 'imperial'
+
+layers = None
 
 def InitGL(Width, Height):
     LoadStaticTextures()
@@ -518,8 +520,7 @@ def keyPressed(*args):
         if zoom > 0:
             zoom -= 1
     elif args[0] == 'v':
-        views = settings.LAYERS.keys()
-        view = views[(views.index(view) + 1) % len(views)]
+        view = layers[(layers.index(view) + 1) % len(layers)]
     elif args[0] == ESCAPE:
         texture_manager.terminate()
         sys.exit()
@@ -557,6 +558,11 @@ def main():
     global texture_manager
     texture_manager = TextureThread(glGenTextures(1))
     texture_manager.start()
+
+    # todo: make layer selection specific to what's available in surrounding area
+    global layers
+    sess = maptile.dbsess()
+    layers = [r[0] for r in sess.query(maptile.Tile.layer).distinct()]
 
     glutMainLoop()
 
