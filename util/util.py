@@ -378,9 +378,14 @@ def save_waypoints(waypoints, new_section_hdr=None, make_backup=True):
 def store_waypoint(waypoint, lns):
     def writeln(wpt):
         fmt = '%(name)s: %(lat)s %(lon)s'
-        if wpt['desc']:
+        if wpt.get('desc'):
             fmt += '  # %(desc)s' 
         fmt += '\n'
+
+        MAX_PREC = 5
+        wpt['lat'] = round(wpt['lat'], MAX_PREC)
+        wpt['lon'] = round(wpt['lon'], MAX_PREC)
+
         return fmt % wpt
 
     def findln(s):
@@ -389,7 +394,7 @@ def store_waypoint(waypoint, lns):
                 return i
 
     existing_line = None
-    if waypoint['key']:
+    if waypoint.get('key'):
         existing_line = findln(waypoint['key'] + ':')
 
     entry = writeln(waypoint)

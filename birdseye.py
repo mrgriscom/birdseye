@@ -523,6 +523,16 @@ def keyPressed(*args):
     elif args[0] == ESCAPE:
         texture_manager.terminate()
         sys.exit()
+    elif args[0] == 'm':
+        k = gps.get_loc()
+        pos = k['p'][:2]
+        mark = {
+            'name': 'm%s' % datetime.now().strftime('%H%M%S'),
+            'desc': '@ %s' % datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'lat': pos[0],
+            'lon': pos[1]
+        }
+        u.save_waypoints([mark], 'EN-ROUTE MARKER')
 
 def main():
     global window
@@ -535,7 +545,7 @@ def main():
     window = glutCreateWindow(windowname)
 
     glutFullScreen()
-    os.popen('wmctrl -r %s -b toggle,fullscreen' % windowname)
+    #os.popen('wmctrl -r %s -b toggle,fullscreen' % windowname)
 
     glutDisplayFunc(DrawGLScene)
     glutIdleFunc(DrawGLScene)
