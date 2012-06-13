@@ -109,7 +109,7 @@ class GPSDProcess(threading.Thread):
                 self.status['online'] = False
             elif 'GPS is offline' in ln:
                 self.status['online'] = False
-            elif 'opened GPS' in ln:
+            elif any(k in ln for k in ('opened GPS', 'activated GPS')):
                 self.status['online'] = True
             elif 'already running' in ln:
                 self.status['rogue'] = True

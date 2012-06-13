@@ -13,6 +13,7 @@ import pickle
 import settings
 from contextlib import contextmanager
 import math
+from subprocess import Popen, PIPE
 
 # this module listens directly to the gpsd output, aggregates
 # and pre-processes the data, and dispatches it over a socket
@@ -43,7 +44,7 @@ class GPSListener(threading.Thread):
         self.sirf_alert = False
 
         self.queue = q
-        self.socket = MessageSocket()
+        self.socket = MessageSocket() if not getattr(settings, 'GPS_PIPE', False) else GPSPipe()
         try:
             self.socket.connect(GPSD_PORT, conn_timeout=3.)
         except MessageSocket.ConnectionFailed:
@@ -102,6 +103,22 @@ class GPSListener(threading.Thread):
         else:
             logging.debug('ignoring message of class [%s]' % message['class'])
             return None
+
+class GPSPipe(object):
+    def connect(self, *args):
+        self.p = Popen('gpspipe -w', shell=True, stdout=PIPE)
+
+    def close(self):
+        self.p.kill()
+
+    def send(self, msg):
+        pass
+
+    def readline(self):
+        ln = self.p.stdout.readline()
+        if not ln:
+            raise MessageSocket.ConnectionBroken()
+        return ln.strip()
 
 def process_tpv(message):
     fields = {
