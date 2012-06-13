@@ -105,7 +105,7 @@ class GPSListener(threading.Thread):
             return None
 
 class GPSPipe(object):
-    def connect(self, *args):
+    def connect(self, *a, **kw):
         self.p = Popen('gpspipe -w', shell=True, stdout=PIPE)
 
     def close(self):
@@ -147,6 +147,11 @@ def process_tpv(message):
     if data['fix_type'] == 'invalid':
         return None
     
+    try:
+        float(data['time'] or 0)
+    except ValueError:
+        data['time'] = u.to_timestamp(datetime.strptime(data['time'][:19], '%Y-%m-%dT%H:%M:%S'))
+
     if data['time'] == None or data['time'] > time.time() + 1.0e7:
         # happens sometimes on the first sample after gpsd starts up
         logging.info('bad timestamp; ignoring report')
