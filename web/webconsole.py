@@ -339,7 +339,7 @@ if __name__ == "__main__":
         (r'/savewaypoint', SaveWaypointHandler),
         (r'/locsearch', LocationSearchHandler),
         (r'/', MainHandler),
-        (r'/play', LayerPlaygroundHandler),
+        (r'/maps', LayerPlaygroundHandler),
         (r'/(.*)', web.StaticFileHandler, {'path': web_path('static')}),
     ], template_path=web_path('templates'))
     application.listen(port, ssl_options=ssl)

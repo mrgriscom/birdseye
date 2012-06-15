@@ -149,13 +149,14 @@ def download_curses(w, polygon, layers):
 
 def monitor(w, y, thread, caption, width, sf=0, erry=None):
     thread.start()
+    thread.start_at = time.time()
     while thread.isAlive():
         update_status(w, thread, False, y, caption, width, sf, erry)
         time.sleep(.01)
     update_status(w, thread, True, y, caption, width, sf, erry)
 
 def update_status(w, thread, done, y, caption, width, sf, erry):
-    println(w, status(caption, thread.status(), width, sf if not done else 0), y)
+    println(w, status(caption, thread.status(), thread.start_at, width, sf if not done else 0), y)
  
     if erry != None:
         err = thread.last_error
@@ -167,7 +168,7 @@ def println(w, str, y, x=0):
     w.clrtoeol()
     w.refresh()
 
-def status(caption, (k, n, e), width=None, est_sigfig=0):
+def status(caption, (k, n, e), start_at, width=None, est_sigfig=0):
     width = width if width else len(caption)
 
     ratio = float(k) / n if n > 0 else 1.
@@ -182,10 +183,12 @@ def status(caption, (k, n, e), width=None, est_sigfig=0):
     else:
         max_str = '%d' % n
 
+    elapsed = u.format_interval(time.time() - start_at, colons=True, max_unit='h')
+
     pad = len(str(n))
-    errstr = '         [Errors: %4d]' % e if e > 0 else ''
-    return '%s %s%6.2f%% [%*d/%s]%s' % ((caption + ':').ljust(width + 1), '+' if overflow else ' ',
-            100. * ratio, pad, k, max_str, errstr)
+    errstr = '   [Errors: %4d]' % e if e > 0 else ''
+    return '%s %s%6.2f%% [%*d/%s] [%s] %s' % ((caption + ':').ljust(width + 1), '+' if overflow else ' ',
+            100. * ratio, pad, k, max_str, elapsed, errstr)
 
 def print_tile_counts(w, counts, header, y, x, width=None, zheader='Zoom'):
     if not width:
