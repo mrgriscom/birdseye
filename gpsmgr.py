@@ -155,7 +155,7 @@ class GPSD(Monitor):
 
             return msg
         else:
-            return 'gpsd not up' + (' (rogue instance?)' if status.get('rogue') else '')
+            return 'gpsd not up' if not status.get('rogue') else 'other gpsd instance running?'
 
     def start_gpsd(self):
         if self.gpsd == None or not self.gpsd.isAlive():

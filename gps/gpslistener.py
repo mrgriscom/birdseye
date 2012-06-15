@@ -109,6 +109,7 @@ class GPSPipe(object):
         self.p = Popen('gpspipe -w', shell=True, stdout=PIPE)
 
     def close(self):
+        # todo: trap potential exception if called more than once?
         self.p.kill()
 
     def send(self, msg):
