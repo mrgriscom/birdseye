@@ -365,10 +365,11 @@ def loader_curses(win, options):
     curses.curs_set(0)
     win.nodelay(1)
 
-    w_device = DeviceWatcher(settings.GPS_DEVICE)
+    w_device = DeviceWatcher(u.gps_device())
     w_device.start()
 
-    w_gpsd = GPSD(settings.GPS_DEVICE, settings.BAUD_RATE)
+    # gpsd can't handle device names over 63 chars, so use canonicalized form
+    w_gpsd = GPSD(u.gps_device(True), settings.BAUD_RATE)
     w_gpsd.start()
     w_gpsd.start_gpsd()
 

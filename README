@@ -17,7 +17,9 @@ in settings.py:
 * create the databases specified in TILE_DB and GPS_LOG_DB
 
 
-birdseye likes to have control over the gpsd process, so may be best to disable gpsd-autostart when the gps is plugged in. everything will still work if not, but birdseye will not be able to tell if/how things go weird.
+birdseye likes to have control over the gpsd process, so may be best to disable gpsd-autostart when the gps is plugged in. everything will still work if not, but birdseye will not be able to tell if/how things go weird. (see /etc/default/gpsd)
+
+use device in /dev/serial if device name keeps changing (/dev/ttyUSB0 => /dev/ttyUSB1)
 
 
 ABOUT

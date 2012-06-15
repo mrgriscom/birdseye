@@ -24,7 +24,8 @@ GPS_LOG_DB = 'postgresql:///geoloc'
 
 ### GPS CONFIGURATION
 
-# gps device
+# gps device -- if the physical device changes non-deterministically (e.g., ttyUSB0, 1, 2, etc...),
+# trying finding a pseudo-device provided by the kerney, such as /dev/serial/...
 GPS_DEVICE = '/dev/ttyUSB0'
 
 # gps device data rate

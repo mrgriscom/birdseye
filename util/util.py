@@ -300,6 +300,13 @@ def tiles_path():
 def pixmap_path(pixmap):
     return proj_path('pixmap', pixmap)
 
+def gps_device(canonical=False):
+    """canonical - resolve symlinks"""
+    dev = settings.GPS_DEVICE
+    if canonical and os.path.exists(dev):
+        dev = os.path.realpath(dev)
+    return dev
+
 def load_waypoints():
     with open(waypoints_path()) as f:
         return load_waypoints_file(f)
