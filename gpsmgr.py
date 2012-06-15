@@ -129,9 +129,9 @@ class GPSDProcess(threading.Thread):
 class GPSD(Monitor):
     """monitor the status of the gpsd daemon"""
 
-    def __init__(self, device, rate, poll_interval=0.2):
+    def __init__(self, get_args, poll_interval=0.2):
         Monitor.__init__(self, poll_interval)
-        self.gpsd_args = (device, rate)
+        self.gpsd_args = get_args
         self.gpsd = None
 
     def get_status(self):
@@ -159,7 +159,7 @@ class GPSD(Monitor):
 
     def start_gpsd(self):
         if self.gpsd == None or not self.gpsd.isAlive():
-            self.gpsd = GPSDProcess(*self.gpsd_args)
+            self.gpsd = GPSDProcess(*self.gpsd_args())
             self.gpsd.start()
         else:
             logging.warn('gpsd already running')
@@ -369,7 +369,7 @@ def loader_curses(win, options):
     w_device.start()
 
     # gpsd can't handle device names over 63 chars, so use canonicalized form
-    w_gpsd = GPSD(u.gps_device(True), settings.BAUD_RATE)
+    w_gpsd = GPSD(lambda: (u.gps_device(True), settings.BAUD_RATE))
     w_gpsd.start()
     w_gpsd.start_gpsd()
 
