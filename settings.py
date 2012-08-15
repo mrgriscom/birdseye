@@ -85,7 +85,7 @@ LAYERS = {
 }
 
 TILE_DL_UA = 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; en-US) Gecko/20100101 Firefox/12.0'
-
+LOC_SEARCH_UA = 'GoogleEarth/5.2.1.1329(X11;Linux (2.6.35.0);en-US;kml:2.2;client:Free;type:default)'
 
 ### MAP RENDERING AND NAVIGATION
 

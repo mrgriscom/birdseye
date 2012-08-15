@@ -252,7 +252,7 @@ class LocationSearchHandler(web.RequestHandler):
         http_client = AsyncHTTPClient()
         request_url = 'http://maps.google.com/maps?' + urllib.urlencode(args)
         try:
-            resp = yield gen.Task(http_client.fetch, request_url)
+            resp = yield gen.Task(http_client.fetch, request_url, user_agent=settings.LOC_SEARCH_UA)
             if resp.code != 200 or 'kml' not in resp.headers.get('Content-Type', ''):
                 raise RuntimeError('no response or invalid response received')
             payload = {
