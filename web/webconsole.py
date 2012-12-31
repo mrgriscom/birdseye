@@ -88,6 +88,8 @@ class TileRequestHandler(web.RequestHandler):
         self._get(mt.Tile(layer=layer, z=int(z), x=int(x), y=int(y)))
 
     def return_static(self, layer, content, digest, modtime):
+        self.set_header('Access-Control-Allow-Origin', '*')
+
         self.set_header('Cache-Control', 'public')
         if modtime:
             self.set_header('Last-Modified', modtime)
@@ -346,7 +348,6 @@ if __name__ == "__main__":
 
     try:
         IOLoop.instance().start()
-        print 'hereeee'
     except KeyboardInterrupt:
         pass
     except Exception, e:
