@@ -235,7 +235,7 @@ class DispatchLoader(threading.Thread):
                 self.listener_first_conn = True
 
                 while self.up:
-                    time.sleep(0.01)
+                    time.sleep(0.03)
                     if not self.listener.isAlive():
                         self.listener = None
                         self.listener_acquire = mk_listener_acquire()

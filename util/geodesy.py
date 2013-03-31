@@ -95,7 +95,11 @@ def vangle(u, v, theta):
 
 #return bearing vector for a given position vector and bearing angle
 def vbear(vp, bearing):
-    rbear = math.radians(bearing)
+    try:
+      rbear = math.radians(bearing)
+    except TypeError:
+        import pdb
+        pdb.set_trace()
     (vnorth, veast) = orientate(vp)
     return vangle(vnorth, veast, rbear)
 
@@ -124,6 +128,8 @@ def _bearing(vp, vdir):
 
 def _xy_to_bearing(x, y):
     return math.degrees(math.atan2(x, y))
+
+# TODO: plot* handle zeroes
 
 #return the coordinates of the position 'distance' meters away from 'p', in direction 'bearing'
 #as well as new bearing at the target point 

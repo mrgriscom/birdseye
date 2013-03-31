@@ -374,7 +374,12 @@ def breadcrumbs(points, interval, gap_threshold):
             bc = p
         else:
             bc = interpolate_point(pprev, p, interp)
-        bc['name'] = str(bc['time'])
+
+        #debug
+        ltime = bc['time'] - timedelta(hours=4)
+        fmttime = '%s %d:%02d%s' % (ltime.strftime('%a').lower(), int(ltime.strftime('%I')), ltime.minute, 'p' if ltime.hour >= 12 else 'a')
+
+        bc['name'] = fmttime #str(bc['time'])
 
         if last_bc is None or dist(last_bc, bc) > breadcrumb_exclusion_radius:
             yield bc
@@ -383,7 +388,10 @@ def breadcrumbs(points, interval, gap_threshold):
 def interpolate_point(pa, pb, k):
     b = bearing(pa, pb)
     d = dist(pa, pb)
-    pinterp = geodesy.plot(_ll(pa), b, k * d)[0]
+    if b is not None:
+        pinterp = geodesy.plot(_ll(pa), b, k * d)[0]
+    else:
+        pinterp = _ll(pa)
     return {
         'time': datetime.utcfromtimestamp(u.linear_interp(u.to_timestamp(pa['time']), u.to_timestamp(pb['time']), k)),
         'lat': pinterp[0],

@@ -145,9 +145,29 @@ def commit_buffer(dbsess, fixbuf):
 
 
 def query_tracklog(dbsess, start, end, inclusive=False):
+    from lxml import etree
+    from datetime import datetime
+
+    with open('/home/drew/tmp/presi/presi.gpx') as f:
+        gpx = etree.parse(f)
+
+    for k in gpx.findall('.//{http://www.topografix.com/GPX/1/1}trkpt'):
+        lat = float(k.attrib['lat'])
+        lon = float(k.attrib['lon'])
+        alt = float(k.find('{http://www.topografix.com/GPX/1/1}ele').text)
+        ts = datetime.strptime(k.find('{http://www.topografix.com/GPX/1/1}time').text, '%Y-%m-%dT%H:%M:%SZ')
+
+        yield {
+            'time': ts,
+            'lat': lat,
+            'lon': lon,
+            'alt': alt,
+        }
+
+    """
     q = dbsess.query(Fix).filter(Fix.gps_time >= start)
     if end:
         q = q.filter(Fix.gps_time <= end if inclusive else Fix.gps_time < end)
     for f in q.order_by(Fix.gps_time):
         yield f.unpack()
-
+    """
