@@ -642,11 +642,10 @@ L.DomUtil = {
 	},
 
 	getScaleString: function (scale, origin) {
-		var preTranslateStr = L.DomUtil.getTranslateString(origin),
-			scaleStr = ' scale(' + scale + ') ',
-			postTranslateStr = L.DomUtil.getTranslateString(origin.multiplyBy(-1));
-
-		return preTranslateStr + scaleStr + postTranslateStr;
+        var preTranslateStr = L.DomUtil.getTranslateString(origin.add(origin.multiplyBy(-1 * scale))),
+        scaleStr = ' scale(' + scale + ') ';
+ 
+        return preTranslateStr + scaleStr;
 	},
 
 	setPosition: function (el, point) {
@@ -6325,11 +6324,6 @@ L.Map.include(!L.DomUtil.TRANSITION ? {} : {
 			tileBg = this._tileBg;
 
 		clearTimeout(this._clearTileBgTimer);
-
-		//dumb FireFox hack, I have no idea why this magic zero translate fixes the scale transition problem
-		if (L.Browser.gecko || window.opera) {
-			tileBg.style[transform] += ' translate(0,0)';
-		}
 
 		var scaleStr;
 

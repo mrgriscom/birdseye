@@ -343,7 +343,7 @@ if __name__ == "__main__":
         (r'/', MainHandler),
         (r'/maps', LayerPlaygroundHandler),
         (r'/(.*)', web.StaticFileHandler, {'path': web_path('static')}),
-    ], template_path=web_path('templates'))
+    ], template_path=web_path('templates'), debug=True)
     application.listen(port, ssl_options=ssl)
 
     try:
