@@ -548,8 +548,9 @@ def main():
     glutInitWindowPosition(0, 0)
     window = glutCreateWindow(windowname)
 
-    glutFullScreen()
-    #os.popen('wmctrl -r %s -b toggle,fullscreen' % windowname)
+    if settings.FULLSCREEN:
+        glutFullScreen()
+        #os.popen('wmctrl -r %s -b toggle,fullscreen' % windowname)
 
     glutDisplayFunc(DrawGLScene)
     glutIdleFunc(DrawGLScene)

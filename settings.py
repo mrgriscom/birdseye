@@ -102,7 +102,7 @@ LOOKBACK = 2
 
 # TODO: figure these out dynamically
 SCREEN_DIM = (1024, 600)
-
+FULLSCREEN = True
 
 
 
