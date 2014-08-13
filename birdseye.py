@@ -418,7 +418,7 @@ def DrawGLScene():
         glDisable(GL_TEXTURE_2D)
         glLineWidth(6)
         glBegin(GL_LINE_STRIP)
-        color = (.2, .2, .2, .7) if view == 'googmap' else (.9, .9, .9, .7)
+        color = (.2, .2, .2, .7) if low_contrast_mode(view) else (.9, .9, .9, .7)
         glColor4f(*color)
         glVertex3f(0, 0, 0.0)
         glVertex3f(-length / 256., 0, 0.0)
@@ -462,6 +462,9 @@ def DrawGLScene():
 def textLen (str):
     return sum([glyphtable[c if c in glyphtable else '?'][1] for c in str])
 
+def low_contrast_mode(view):
+    return any(k in view for k in ('map', 'terr', 'topo'))
+
 def writeText (str):
     xc = 0
     for c in str:
@@ -478,7 +481,7 @@ def writeText (str):
         cy1 = sy / 256.
 
         glBegin(GL_QUADS)
-        color = (.3, .3, .3, 1.) if view == 'googmap' else (.8, .8, .8, 1.)
+        color = (.3, .3, .3, 1.) if low_contrast_mode(view) else (.8, .8, .8, 1.)
         glColor4f(*color)
         glTexCoord2f(tx0, ty0) 
         glVertex3f(cx0, cy0, 0.0)
@@ -563,6 +566,7 @@ def main():
     global layers
     sess = maptile.dbsess()
     layers = [r[0] for r in sess.query(maptile.Tile.layer).distinct()]
+    layers = filter(lambda lyr: not getattr(settings, 'SHOW_LAYERS', []) or lyr in settings.SHOW_LAYERS, layers)
 
     glutMainLoop()
 
