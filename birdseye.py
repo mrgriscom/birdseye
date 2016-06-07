@@ -87,7 +87,7 @@ def SetProjection (Width, Height):
     glMatrixMode(GL_MODELVIEW)
 
 def LoadTexture(id, image, alpha=False):
-    pixels = image.tostring("raw", "RGBA" if alpha else "RGBX", 0, -1)
+    pixels = image.tobytes("raw", "RGBA" if alpha else "RGBX", 0, -1)
 
     glBindTexture(GL_TEXTURE_2D, id)
     glPixelStorei(GL_UNPACK_ALIGNMENT,1)

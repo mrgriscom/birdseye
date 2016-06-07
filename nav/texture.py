@@ -10,25 +10,25 @@ import util.util as u
 blocksize = 256
 fallback = settings.LOOKBACK
 
-def get_texture_image (mode, zoom, xmin, ymin, width, height):
-  tx = new("RGB", (blocksize * width, blocksize * height))
+def get_texture_image (mode, zoom, xmin, ymin, width, height, alpha=False):
+  tx = new("RGBA" if alpha else "RGB", (blocksize * width, blocksize * height))
 
   for bx in range(0, width):
     for by in range(0, height):
       cx = (xmin + bx) % 2**zoom
       cy = ymin + by
       
-      tile = get_img_chunk(mode, zoom, cx, cy)
+      tile = get_img_chunk(mode, zoom, cx, cy, alpha)
       tx.paste(tile, [blocksize * p for p in [bx, by, bx + 1, by + 1]])
 
   return tx
 
-def get_img_chunk (mode, zoom, x, y):
+def get_img_chunk (mode, zoom, x, y, alpha=False):
   if x < 0 or y < 0 or x >= 2**zoom or y >= 2**zoom:
     return open(u.pixmap_path('space.jpg'))
 
 
-  tile = get_zoom_tile(mode, zoom, x, y)
+  tile = get_zoom_tile(mode, zoom, x, y, alpha)
   if tile == None:
     tile = get_fallback_tile(mode, zoom, x, y)
   if tile == None:
@@ -36,12 +36,12 @@ def get_img_chunk (mode, zoom, x, y):
     tile = open(missing)
   return tile
 
-def get_zoom_tile (mode, zoom, x, y):
+def get_zoom_tile (mode, zoom, x, y, alpha=False):
   file = tile_file(mode, zoom, x, y)
   if file != None:
     with file as _f:
       img = open(_f)
-      return img.convert("RGB")
+      return img.convert("RGBA" if alpha else "RGB")
   else:
     return None
 

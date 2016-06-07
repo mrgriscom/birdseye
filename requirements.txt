@@ -2,9 +2,9 @@ pyzmq>=2.1
 SQLAlchemy>=0.7
 numpy
 PyOpenGL>=3.0
-PIL
+pillow
 PyYAML
 lxml
-Polygon==2.0.4
+Polygon2==2.0.8
 tornado
 psycopg2
