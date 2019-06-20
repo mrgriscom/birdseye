@@ -2,15 +2,18 @@ import sys
 from OpenGL.GL import *
 from OpenGL.GLUT import *
 from OpenGL.GLU import *
-import Image
+try:
+    import Image
+    import ImageFont
+    import ImageDraw
+except ImportError:
+    from PIL import Image, ImageDraw, ImageFont
 import time
 import math
 from nav.tracker import Tracker, live_stream, dead_reckoning_stream, tracklog_stream
 from mapcache import maptile
 from nav import texture
 from util import geodesy
-import ImageFont
-import ImageDraw
 from datetime import datetime
 from optparse import OptionParser
 import os
@@ -565,10 +568,13 @@ def main():
 
     # todo: make layer selection specific to what's available in surrounding area
     global layers
+    global view
     sess = maptile.dbsess()
     layers = [r[0] for r in sess.query(maptile.Tile.layer).distinct()]
     layers = filter(lambda lyr: not getattr(settings, 'SHOW_LAYERS', []) or lyr in settings.SHOW_LAYERS, layers)
-
+    if view not in layers:
+        view = layers[0]
+        
     glutMainLoop()
 
 
@@ -647,7 +653,7 @@ def parse_args (args):
 
         fixstream = dead_reckoning_stream(demo_p, demo_v)
     else:
-        
+
         fixstream = live_stream(GPSSubscription())
 
     if len(args) > 0:

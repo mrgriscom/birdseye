@@ -1,6 +1,11 @@
-from Image import *
+try:
+  from Image import *
+  import ImageEnhance
+except ImportError:
+  import PIL
+  from PIL.Image import *
+  from PIL import ImageEnhance
 import os
-import ImageEnhance
 from mapcache import mapdownload
 from mapcache import maptile
 import settings

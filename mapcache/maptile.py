@@ -8,7 +8,10 @@ import os.path
 from glob import glob
 from StringIO import StringIO
 from contextlib import closing
-import Image
+try:
+    import Image
+except ImportError:
+    from PIL import Image
 import collections
 import mapdownload # argh circular import
 

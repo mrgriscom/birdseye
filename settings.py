@@ -9,7 +9,7 @@ TILE_DB = 'postgresql:///tiles'
 
 # if true, store tile images in database as BLOBs
 # if false, store as files in TILE_ROOT
-TILE_STORE_BLOB = False
+TILE_STORE_BLOB = True
 
 # root directory where tiles are stored
 TILE_ROOT = '~/.birdseye/tiles'
