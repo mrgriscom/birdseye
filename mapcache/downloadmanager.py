@@ -92,12 +92,14 @@ class DownloadWorker(threading.Thread):
 
     def download(self, (key, url)):
         """download a single item and place in 'out' queue for processing"""
-        host = urlparse(url).netloc
+        up = urlparse(url)
+        host = up.netloc
+        secure = (up.scheme == 'https')
         headers = {'User-Agent': self.useragent}
 
         for t in range(self.num_retries):
             try:
-                status, data = self.get_connection(host).download(url, headers)
+                status, data = self.get_connection(host, secure).download(url, headers)
             except Exception, e:
                 status, data = None, '%s: %s' % (type(e), e)
 
@@ -106,32 +108,32 @@ class DownloadWorker(threading.Thread):
 
         self.qout.put((key, status, data))
 
-    def get_connection(self, host):
+    def get_connection(self, host, secure):
         """get persistent connection to host, or (re-)initialize if necessary"""
         conn = self.connections.get(host)
         if not conn or not conn.good():
-            conn = Connection.make(host, self.connection_request_limit)
+            conn = Connection.make(host, secure, self.connection_request_limit)
             self.connections[host] = conn
         return conn
 
 class Connection(object):
     """a persistent, keep-alive http connection"""
 
-    def __init__(self, host, limit):
+    def __init__(self, host, secure, limit):
         """
         host -- e.g., c.mapserver.org:8080
         limit -- maximum requests on this connection before discarding
         """
-        self.conn = httplib.HTTPConnection(host, strict=True)
+        self.conn = httplib.HTTPSConnection(host, strict=True) if secure else httplib.HTTPConnection(host)
         self.limit = limit
 
         self.count = 0
         self.error = False
 
     @staticmethod
-    def make(host, limit):
+    def make(host, secure, limit):
         try:
-            return Connection(host, limit)
+            return Connection(host, secure, limit)
         except (httplib.HTTPException, socket.error):
             logging.exception('http connection error during init')
             raise
@@ -146,7 +148,7 @@ class Connection(object):
     def download(self, url, headers={}):
         """execute a download request on this connection"""
         up = urlparse(url)
-        get = '%s?%s' % (up.path, up.query)
+        get = up.path + (('?%s' % up.query) if up.query else '')
         headers.update({
             'Accept': '*/*',
             'Connection': 'Keep-Alive'
